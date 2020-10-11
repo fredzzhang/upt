@@ -128,7 +128,7 @@ class InteractGraph(nn.Module):
         """
         Arguments:
             features(OrderedDict[Tensor]): Image pyramid with different levels
-            box_features(Tensor[M, N])
+            box_features(Tensor[M, R])
             box_coords(List[Tensor])
             box_labels(List[Tensor])
             box_scores(List[Tensor])
@@ -136,6 +136,12 @@ class InteractGraph(nn.Module):
                 "boxes_h": Tensor[N, 4]
                 "boxes_o": Tensor[N, 4]
                 "labels": Tensor[N]
+        Returns:
+            all_box_pair_features(Tensor[P, 2*R])
+            all_boxes_h(list[Tensor])
+            all_boxes_o(list[Tensor])
+            all_labels(list[Tensor])
+            all_prior(Tensor[P, K])
         """
         if self.training:
             assert targets is not None, "Targets should be passed during training"
@@ -150,8 +156,11 @@ class InteractGraph(nn.Module):
             n = num_boxes[b_idx]
             device = box_features.device
 
-            # Permute the boxes so that humans are on the top
             human_box_idx = torch.nonzero(labels == self.human_idx).squeeze(1).tolist()
+            # Skip image when there are no detected human or object instances
+            if n == 0 or len(human_box_idx) == 0:
+                continue
+            # Permute the boxes so that humans are on the top
             permutation = torch.cat([
                 torch.as_tensor(human_box_idx, device=device),
                 torch.as_tensor([i for i in range(n) if i not in human_box_idx], device=device)
@@ -204,6 +213,9 @@ class InteractGraph(nn.Module):
             ])
 
             counter += n
+
+        all_box_pair_features = torch.cat(all_box_pair_features)
+        all_prior = torch.cat(all_prior)
 
         return all_box_pair_features, all_boxes_h, all_boxes_o, all_labels, all_prior
 
