@@ -173,7 +173,7 @@ class CustomisedEngine(DistributedLearningEngine):
         else:
             return None
 
-    def eval_on_hicodet_protocol(self):
+    def eval_on_hicodet_protocol(self, min_iou=0.5):
         """Evaluate the model based on HICODet protocol"""
         # NOTE Add conversion from action classes to interaction classes
         return 0
@@ -212,6 +212,7 @@ class CustomisedEngine(DistributedLearningEngine):
         #         max_iou, max_idx = iou.max(0)
         #         match = -1 * torch.ones_like(iou)
         #         match[max_idx, torch.arange(iou.shape[1], device=iou.device)] = max_iou
+        #         match = match >= min_iou
 
         #         # Associate detected box pairs with ground truth
         #         for i, m in enumerate(match):
