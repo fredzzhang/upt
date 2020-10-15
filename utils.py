@@ -114,7 +114,7 @@ class CustomisedEngine(DistributedLearningEngine):
         for result_one in self._state.output:
             result_tensor = torch.stack([
                 torch.cat(result_one["scores"]),
-                torch.cat(result_one["labels"]),
+                torch.cat(result_one["labels"]).float(),
                 torch.cat(result_one["gt_labels"])
             ])
             # Collect results across subprocesses
