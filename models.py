@@ -172,7 +172,10 @@ class InteractGraph(nn.Module):
 
             n_h = len(human_box_idx)
             # Get the pairwise index between every human and object instance
-            x, y = torch.meshgrid(torch.arange(n_h), torch.arange(n), device=device)
+            x, y = torch.meshgrid(
+                torch.arange(n_h, device=device),
+                torch.arange(n, device=device)
+            )
             x, y = torch.nonzero(x != y).unbind(1)
 
             for i in range(self.num_iter):
