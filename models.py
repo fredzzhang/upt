@@ -49,9 +49,9 @@ class InteractGraph(nn.Module):
         self.adjacency = nn.Sequential(
             nn.Linear(node_encoding_size*2, representation_size),
             nn.ReLU(),
-            nn.Linear(representation_size, representation_size/2),
+            nn.Linear(representation_size, int(representation_size/2)),
             nn.ReLU(),
-            nn.Linear(representation_size/2, 1)
+            nn.Linear(int(representation_size/2), 1)
         )
 
         # Compute messages
@@ -116,7 +116,7 @@ class InteractGraph(nn.Module):
         target_cls_idx = [self.object_class_to_target_class[obj]
             for obj in object_class[y]]
         # Duplicate box pair indices for each target class
-        pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in range(len(tar))]
+        pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
         # Flatten mapped target indices
         flat_target_idx = [t for tar in target_cls_idx for t in tar]
 
@@ -172,7 +172,7 @@ class InteractGraph(nn.Module):
 
             n_h = len(human_box_idx)
             # Get the pairwise index between every human and object instance
-            x, y = torch.meshgrid(torch.arange(n_h), torch.arange(n))
+            x, y = torch.meshgrid(torch.arange(n_h), torch.arange(n), device=device)
             x, y = torch.nonzero(x != y).unbind(1)
 
             for i in range(self.num_iter):
@@ -200,17 +200,20 @@ class InteractGraph(nn.Module):
 
             if self.training:
                 all_labels.append(self.associate_with_ground_truth(
-                    coords[x], coords[y], targets[b_idx]
-                ))
+                    coords[x], coords[y], targets[b_idx])
+                )
                 
             all_box_pair_features.append(torch.cat([
                 node_encodings[x], node_encodings[y]
             ], 1))
             all_boxes_h.append(coords[x])
             all_boxes_o.append(coords[y])
-            all_prior.append([
+            # The prior score is the product between edge weights and the
+            # pre-computed object detection scores with LIS
+            all_prior.append(
+                adjacency_matrix[x, y, None] *
                 self.compute_prior_scores(x, y, scores, labels)
-            ])
+            )
 
             counter += n
 
