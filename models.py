@@ -187,51 +187,54 @@ class InteractGraph(nn.Module):
             node_encodings = box_features[counter: counter+n][permutation]
 
             n_h = len(human_box_idx)
+            # Duplicate human nodes
+            h_node_encodings = node_encodings[:n_h]
             # Get the pairwise index between every human and object instance
             x, y = torch.meshgrid(
                 torch.arange(n_h, device=device),
                 torch.arange(n, device=device)
             )
-            x, y = torch.nonzero(x != y).unbind(1)
+            # Remove pairs consisting of the same human instance
+            x_keep, y_keep = torch.nonzero(x != y).unbind(1)
+            # Human nodes have been duplicated and will be treated independently
+            # of the humans included amongst object nodes
+            x = x.flatten(); y = y.flatten()
 
             for i in range(self.num_iter):
                 # Compute weights of each edge
                 weights = self.adjacency(torch.cat([
-                    node_encodings[x],
+                    h_node_encodings[x],
                     node_encodings[y]
                 ], 1))
-                # Construct adjacency matrix
-                # Diagonal entries are set to zero
-                adjacency_matrix = torch.zeros([n_h, n], device=device)
-                adjacency_matrix[x, y] = torch.sigmoid(weights)
+                adjacency_matrix = weights.reshape(n_h, n)
 
                 # Update human nodes
-                node_encodings[:n_h] = self.sub_update(torch.cat([
-                    node_encodings[:n_h],
+                h_node_encodings = self.sub_update(torch.cat([
+                    h_node_encodings,
                     torch.mm(adjacency_matrix, self.obj_to_sub(node_encodings))
                 ], 1))
 
                 # Update object nodes (including human nodes)
                 node_encodings = self.obj_update(torch.cat([
                     node_encodings,
-                    torch.mm(adjacency_matrix.t(), self.sub_to_obj(node_encodings[:n_h]))
+                    torch.mm(adjacency_matrix.t(), self.sub_to_obj(h_node_encodings))
                 ], 1))
 
             if self.training:
                 all_labels.append(self.associate_with_ground_truth(
-                    coords[x], coords[y], targets[b_idx])
+                    coords[x_keep], coords[y_keep], targets[b_idx])
                 )
                 
             all_box_pair_features.append(torch.cat([
-                node_encodings[x], node_encodings[y]
+                h_node_encodings[x_keep], node_encodings[y_keep]
             ], 1))
-            all_boxes_h.append(coords[x])
-            all_boxes_o.append(coords[y])
+            all_boxes_h.append(coords[x_keep])
+            all_boxes_o.append(coords[y_keep])
             # The prior score is the product between edge weights and the
             # pre-computed object detection scores with LIS
             all_prior.append(
-                adjacency_matrix[x, y, None] *
-                self.compute_prior_scores(x, y, scores, labels)
+                adjacency_matrix[x_keep, y_keep, None] *
+                self.compute_prior_scores(x_keep, y_keep, scores, labels)
             )
 
             counter += n
