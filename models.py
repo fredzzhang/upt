@@ -16,6 +16,7 @@ from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 
 import pocket.models as models
+from pocket.ops import Flatten
 
 def LIS(x, T=8.3, k=12, w=10):
     """
@@ -26,6 +27,8 @@ def LIS(x, T=8.3, k=12, w=10):
 
 class InteractGraph(nn.Module):
     def __init__(self,
+                out_channels,
+                roi_pool_size,
                 node_encoding_size, 
                 representation_size, 
                 num_cls, human_idx,
@@ -35,6 +38,8 @@ class InteractGraph(nn.Module):
 
         super().__init__()
 
+        self.out_channels = out_channels
+        self.roi_pool_size = roi_pool_size
         self.node_encoding_size = node_encoding_size
         self.representation_size = representation_size
 
@@ -44,6 +49,15 @@ class InteractGraph(nn.Module):
 
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
+
+        # Box head to map RoI features to low dimensional
+        self.box_head = nn.Sequential(
+            Flatten(start_dim=1),
+            nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
+            nn.ReLU(),
+            nn.Linear(node_encoding_size, node_encoding_size),
+            nn.ReLU()
+        )
 
         # Compute adjacency matrix
         self.adjacency = nn.Sequential(
@@ -145,6 +159,8 @@ class InteractGraph(nn.Module):
         """
         if self.training:
             assert targets is not None, "Targets should be passed during training"
+
+        box_features = self.box_head(box_features)
 
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
         
@@ -256,8 +272,6 @@ class InteractGraphNet(models.GenericHOINetwork):
             min_size=800, max_size=1333,
             image_mean=None, image_std=None,
             # Preprocessing parameters
-            box_score_thresh_h=0.6,
-            box_score_thresh_o=0.3,
             box_nms_thresh=0.5
             ):
 
@@ -271,6 +285,8 @@ class InteractGraphNet(models.GenericHOINetwork):
         )
 
         box_pair_head = InteractGraph(
+            out_channels=backbone.out_channels,
+            roi_pool_size=output_size,
             node_encoding_size=node_encoding_size,
             representation_size=representation_size,
             num_cls=num_classes,
@@ -291,8 +307,6 @@ class InteractGraphNet(models.GenericHOINetwork):
             box_pair_head=box_pair_head,
             box_pair_predictor=box_pair_predictor,
             human_idx=human_idx,
-            box_score_thresh_h=box_score_thresh_h,
-            box_score_thresh_o=box_score_thresh_o,
             box_nms_thresh=box_nms_thresh
         )
 
