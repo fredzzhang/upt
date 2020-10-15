@@ -32,12 +32,46 @@ def custom_collate(batch):
     return images, detections, targets
 
 class CustomisedDataset(Dataset):
-    def __init__(self, dataset, detection_dir):
+    def __init__(self, dataset, detection_dir,
+            # Parameters for preprocessing
+            human_idx,
+            box_score_thresh_h=0.6,
+            box_score_thresh_o=0.3
+            ):
+
         self.dataset = dataset
         self.detection_dir = detection_dir
 
+        self.human_idx = human_idx
+        self.box_score_thresh_h = box_score_thresh_h
+        self.box_score_thresh_o = box_score_thresh_o
+
     def __len__(self):
         return len(self.dataset)
+
+    def filter_detections(self, detection):
+        """Perform NMS and remove low scoring examples"""
+
+        boxes = torch.as_tensor(detection['boxes'])
+        labels = torch.as_tensor(detection['labels'])
+        scores = torch.as_tensor(detection['scores'])
+
+        # Filter out low scoring human boxes
+        idx = torch.nonzero(labels == self.human_idx).squeeze(1)
+        keep_idx = idx[torch.nonzero(scores[idx] >= self.box_score_thresh_h).squeeze(1)]
+
+        # Filter out low scoring object boxes
+        idx = torch.nonzero(labels != self.human_idx).squeeze(1)
+        keep_idx = torch.cat([
+            keep_idx,
+            idx[torch.nonzero(scores[idx] >= self.box_score_thresh_o).squeeze(1)]
+        ])
+
+        boxes = boxes[keep_idx].view(-1, 4)
+        scores = scores[keep_idx].view(-1)
+        labels = labels[keep_idx].view(-1)
+
+        return dict(boxes=boxes, labels=labels, scores=scores)
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
@@ -50,6 +84,8 @@ class CustomisedDataset(Dataset):
         with open(detection_path, 'r') as f:
             detection = pocket.ops.to_tensor(json.load(f),
                 input_format='dict')
+
+        detection = self.filter_detections(detection)
 
         return [image], [detection], [target]
 
