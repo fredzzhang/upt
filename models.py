@@ -224,6 +224,8 @@ class InteractGraph(nn.Module):
 
 class BoxPairPredictor(nn.Module):
     def __init__(self, input_size, representation_size, num_classes):
+        super().__init__()
+
         self.predictor = nn.Sequential(
             nn.Linear(input_size, representation_size),
             nn.ReLU(),
