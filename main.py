@@ -56,7 +56,7 @@ def main(rank, args):
             dataset=CustomisedDataset(trainset, 
                 os.path.join(args.data_root,
                 "fasterrcnn_resnet50_fpn_detections/train2015")
-            ), collate_fn=custom_collate, batch_size=args.barch_size,
+            ), collate_fn=custom_collate, batch_size=args.batch_size,
             num_workers=args.num_workers, pin_memory=True,
             sampler=DistributedSampler(
                 trainset, 
@@ -82,7 +82,7 @@ def main(rank, args):
         },
         lr_scheduler=True,
         lr_sched_params={
-            'milestones': args.milestone,
+            'milestones': args.milestones,
             'gamma': args.lr_decay
         },
         print_interval=args.print_interval,
@@ -116,6 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
 
     args = parser.parse_args()
+    print(args)
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "8888"
