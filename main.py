@@ -46,6 +46,10 @@ def main(rank, args):
         trainset.object_to_verb, 49,
         num_iterations=args.num_iter
     )
+    # Fix backbone parameters
+    for p in net.backbone.parameters():
+        p.requires_grad = False
+
     if os.path.exists(args.model_path):
         print("Loading model from ", args.model_path)
         net.load_state_dict(torch.load(args.model_path)['model_state_dict'])
