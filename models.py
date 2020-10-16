@@ -174,20 +174,23 @@ class InteractGraph(nn.Module):
             device = box_features.device
 
             human_box_idx = torch.nonzero(labels == self.human_idx).squeeze(1).tolist()
-            # Skip image when there are no detected human or object instances
-            if n == 0 or len(human_box_idx) == 0:
-                continue
-            # Permute the boxes so that humans are on the top
-            permutation = torch.cat([
-                torch.as_tensor(human_box_idx, device=device),
-                torch.as_tensor([i for i in range(n) if i not in human_box_idx], device=device)
-            ])
-            coords = coords[permutation]
-            labels = labels[permutation]
-            scores = scores[permutation]
-            node_encodings = box_features[counter: counter+n][permutation]
-
             n_h = len(human_box_idx)
+            # Skip image when there are no detected human or object instances
+            if n_h == 0 or n == 0:
+                continue
+            if n_h == n:
+                node_encodings = box_features[counter: counter+n]
+            else:
+                # Permute the boxes so that humans are on the top
+                permutation = torch.cat([
+                    torch.as_tensor(human_box_idx, device=device),
+                    torch.as_tensor([i for i in range(n) if i not in human_box_idx], device=device)
+                ])
+                coords = coords[permutation]
+                labels = labels[permutation]
+                scores = scores[permutation]
+                node_encodings = box_features[counter: counter+n][permutation]
+
             # Duplicate human nodes
             h_node_encodings = node_encodings[:n_h]
             # Get the pairwise index between every human and object instance
