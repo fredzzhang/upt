@@ -12,6 +12,7 @@ import json
 import time
 import torch
 import pickle
+import numpy as np
 import torch.distributed as dist
 
 from torch.utils.data import Dataset
@@ -110,18 +111,22 @@ class CustomisedEngine(DistributedLearningEngine):
         self._state.loss.backward()
         self._state.optimizer.step()
 
-        # Add results to AP meter
+        scores = []; pred = []; labels = []
+        # Collate results within the batch
         for result_one in self._state.output:
-            result_tensor = torch.stack([
-                torch.cat(result_one["scores"]),
-                torch.cat(result_one["labels"]).float(),
-                torch.cat(result_one["gt_labels"])
-            ])
-            # Collect results across subprocesses
-            scores, pred, labels = torch.cat(all_gather(result_tensor), dim=1).unbind()
-            # Log results in master process
-            if self._rank == 0:
-                self.ap_train.append(scores, pred, labels)
+            scores.extend(result_one["scores"].tolist())
+            pred.extend(result_one["labels"].tolist())
+            labels.extend(result_one["gt_labels"].tolist())
+        # Sync across subprocesses
+        score_list = all_gather(scores)
+        pred_list = all_gather(pred)
+        label_list = all_gather(labels)
+        # Collate and log results in master process
+        if self._rank == 0:
+            scores = torch.cat([torch.as_tensor(item) for item in score_list])
+            pred = torch.cat([torch.as_tensor(item) for item in pred_list])
+            labels = torch.cat([torch.as_tensor(item) for item in label_list])
+            self.ap_train.append(scores, pred, labels)
 
     def _on_end_epoch(self):
         super()._on_end_epoch()
@@ -158,6 +163,7 @@ class CustomisedEngine(DistributedLearningEngine):
             if results is None:
                 continue
 
+            scores_n_labels = []; pred = []
             for result, target in zip(results, batch[-1]):
                 result = pocket.ops.relocate_to_cpu(result)
 
@@ -189,19 +195,23 @@ class CustomisedEngine(DistributedLearningEngine):
                         except KeyError:
                             continue
 
-                pred = torch.cat([
-                    torch.tensor(list(p.keys())) for p in predictions
-                ])
-                scores_n_labels = torch.cat([
-                    torch.tensor(list(p.values())) for p in predictions
-                ])
-                # Collect results across subprocesses
-                pred = torch.cat(all_gather(pred))
-                scores, labels = torch.cat(all_gather(scores_n_labels), dim=0).unbind(1)
+                pred.append(np.concatenate([
+                    np.asarray(list(p.keys())) for p in predictions
+                ]))
+                scores_n_labels.append(np.concatenate([
+                    np.asarray(list(p.values())) for p in predictions
+                ]))
+            # Collect results across subprocesses
+            pred = torch.from_numpy(np.concatenate(
+                all_gather(np.concatenate(pred))
+            ))
+            scores, labels = torch.from_numpy(np.concatenate(
+                all_gather(np.concatenate(scores_n_labels))
+            )).unbind(1)
 
-                # Log results in master process
-                if self._rank == 0:
-                    ap_test.append(scores, pred, labels)
+            # Log results in master process
+            if self._rank == 0:
+                ap_test.append(scores, pred, labels)
 
         # Evaluate mAP in master process
         if self._rank == 0:
