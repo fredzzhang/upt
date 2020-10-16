@@ -135,6 +135,9 @@ def main(rank, args):
             loss.backward()
             optimizer.step()
 
+            if output is None:
+                continue
+
             scores = []; pred = []; labels = []
             # Collate results within the batch
             for result_one in output:
