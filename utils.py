@@ -118,9 +118,9 @@ class CustomisedEngine(DistributedLearningEngine):
             pred.append(torch.cat(result_one["labels"]).detach().cpu().numpy())
             labels.append(torch.cat(result_one["gt_labels"]).detach().cpu().numpy())
         # Sync across subprocesses
-        score_list = all_gather(scores)
-        pred_list = all_gather(pred)
-        label_list = all_gather(labels)
+        score_list = all_gather(np.concatenate(scores))
+        pred_list = all_gather(np.concatenate(pred))
+        label_list = all_gather(np.concatenate(labels))
         # Collate and log results in master process
         if self._rank == 0:
             scores = torch.from_numpy(np.concatenate(score_list))
