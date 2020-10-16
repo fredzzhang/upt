@@ -65,7 +65,8 @@ class InteractGraph(nn.Module):
             nn.ReLU(),
             nn.Linear(representation_size, int(representation_size/2)),
             nn.ReLU(),
-            nn.Linear(int(representation_size/2), 1)
+            nn.Linear(int(representation_size/2), 1),
+            nn.Sigmoid()
         )
 
         # Compute messages
