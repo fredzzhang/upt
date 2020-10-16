@@ -114,18 +114,18 @@ class CustomisedEngine(DistributedLearningEngine):
         scores = []; pred = []; labels = []
         # Collate results within the batch
         for result_one in self._state.output:
-            scores.extend(result_one["scores"].tolist())
-            pred.extend(result_one["labels"].tolist())
-            labels.extend(result_one["gt_labels"].tolist())
+            scores.append(torch.cat(result_one["scores"]).detach().cpu().numpy())
+            pred.append(torch.cat(result_one["labels"]).detach().cpu().numpy())
+            labels.append(torch.cat(result_one["gt_labels"]).detach().cpu().numpy())
         # Sync across subprocesses
         score_list = all_gather(scores)
         pred_list = all_gather(pred)
         label_list = all_gather(labels)
         # Collate and log results in master process
         if self._rank == 0:
-            scores = torch.cat([torch.as_tensor(item) for item in score_list])
-            pred = torch.cat([torch.as_tensor(item) for item in pred_list])
-            labels = torch.cat([torch.as_tensor(item) for item in label_list])
+            scores = torch.from_numpy(np.concatenate(score_list))
+            pred = torch.from_numpy(np.concatenate(pred_list))
+            labels = torch.from_numpy(np.concatenate(label_list))
             self.ap_train.append(scores, pred, labels)
 
     def _on_end_epoch(self):
@@ -202,15 +202,15 @@ class CustomisedEngine(DistributedLearningEngine):
                     np.asarray(list(p.values())) for p in predictions
                 ]))
             # Collect results across subprocesses
-            pred = torch.from_numpy(np.concatenate(
-                all_gather(np.concatenate(pred))
-            ))
-            scores, labels = torch.from_numpy(np.concatenate(
-                all_gather(np.concatenate(scores_n_labels))
-            )).unbind(1)
+            pred_list = all_gather(np.concatenate(pred))
+            scores_n_labels_list = all_gather(np.concatenate(scores_n_labels))
 
             # Log results in master process
             if self._rank == 0:
+                pred = torch.from_numpy(np.concatenate(pred_list))
+                scores, labels = torch.from_numpy(np.concatenate(
+                    scores_n_labels_list
+                )).unbind(1)
                 ap_test.append(scores, pred, labels)
 
         # Evaluate mAP in master process
