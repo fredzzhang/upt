@@ -166,7 +166,7 @@ class InteractGraph(nn.Module):
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
         
         counter = 0
-        all_boxes_h = []; all_boxes_o = []
+        all_boxes_h = []; all_boxes_o = []; all_object_class = []
         all_labels = []; all_prior = []
         all_box_pair_features = []
         for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
@@ -234,6 +234,7 @@ class InteractGraph(nn.Module):
             ], 1))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
+            all_object_class.append(labels[y_keep])
             # The prior score is the product between edge weights and the
             # pre-computed object detection scores with LIS
             all_prior.append(
@@ -246,7 +247,7 @@ class InteractGraph(nn.Module):
         all_box_pair_features = torch.cat(all_box_pair_features)
         all_prior = torch.cat(all_prior)
 
-        return all_box_pair_features, all_boxes_h, all_boxes_o, all_labels, all_prior
+        return all_box_pair_features, all_boxes_h, all_boxes_o, all_object_class, all_labels, all_prior
 
 class BoxPairPredictor(nn.Module):
     def __init__(self, input_size, representation_size, num_classes):
