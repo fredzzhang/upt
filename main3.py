@@ -3,10 +3,7 @@ import time
 import torch
 import argparse
 import torchvision
-import numpy as np
-import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader
 from torchvision.ops.boxes import box_iou
 
 import pocket
@@ -14,7 +11,68 @@ from pocket.data import HICODet
 from pocket.utils import NumericalMeter, DetectionAPMeter, HandyTimer
 
 from models import InteractGraphNet
-from utils import custom_collate, CustomisedEngine, CustomisedDataset
+from utils import custom_collate, CustomisedDataset
+
+def test(net, test_loader):
+    testset = test_loader.dataset.dataset
+
+    ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
+    net.eval()
+    for batch in test_loader:
+        inputs = pocket.ops.relocate_to_cuda(batch[:-1])
+        with torch.no_grad():
+            output = net(*inputs)
+        if output is None:
+            continue
+
+        for result, target in zip(output, batch[-1]):
+            result = pocket.ops.relocate_to_cpu(result)
+
+            # Reformat the predicted classes and scores
+            # TARGET_CLASS: [SCORE, BINARY_LABELS]
+            predictions = [{
+                testset.object_n_verb_to_interaction[k2][k1]:[v.item(), 0]
+                for k1, v, k2 in zip(l, s, o)
+            } for l, s, o in zip(result["labels"], result["scores"], result["object"])]
+            # Compute minimum IoU
+            iou = torch.min(
+                box_iou(target['boxes_h'], result['boxes_h']),
+                box_iou(target['boxes_o'], result['boxes_o'])
+            )
+            # Assign each detection to GT with the highest IoU
+            max_iou, max_idx = iou.max(0)
+            match = -1 * torch.ones_like(iou)
+            match[max_idx, torch.arange(iou.shape[1], device=iou.device)] = max_iou
+            match = match >= 0.5
+
+            # Associate detected box pairs with ground truth
+            for i, m in enumerate(match):
+                target_class = target["hoi"][i].item()
+                # For each ground truth box pair, find the
+                # detections with sufficient IoU
+                det_idx = m.nonzero().squeeze(1)
+                if len(det_idx) == 0:
+                    continue
+                # Retrieve the scores of matched detections
+                # When target class was not predicted, fill the score as -1
+                match_scores = torch.as_tensor([p[target_class][0]
+                    if target_class in p else -1 for p in predictions])
+                match_idx = match_scores.argmax()
+                # None of matched detections have predicted target class
+                if match_scores[match_idx] == -1:
+                    continue
+                predictions[match_idx][target_class][1] = 1
+
+            pred = torch.cat([
+                torch.tensor(list(p.keys())) for p in predictions
+            ])
+            scores, labels = torch.cat([
+                torch.tensor(list(p.values())) for p in predictions
+            ]).unbind(1)
+
+            ap_test.append(scores, pred, labels)
+
+    return ap_test.eval()
 
 def main(args):
 
@@ -45,7 +103,7 @@ def main(args):
                 "fasterrcnn_resnet50_fpn_detections/train2015"),
                 human_idx=49
             ), collate_fn=custom_collate, batch_size=args.batch_size,
-            num_workers=args.num_workers, pin_memory=True
+            num_workers=args.num_workers, pin_memory=True, shuffle=True
     )
 
     test_loader = DataLoader(
@@ -123,11 +181,11 @@ def main(args):
                 continue
 
             # Collate results within the batch
-            for result_one in output:
+            for result in output:
                 ap_train.append(
-                    torch.cat(result_one["scores"]),
-                    torch.cat(result_one["labels"]),
-                    torch.cat(result_one["gt_labels"])
+                    torch.cat(result["scores"]),
+                    torch.cat(result["labels"]),
+                    torch.cat(result["gt_labels"])
                 )
             ####################
             # on_end_iteration
@@ -164,77 +222,15 @@ def main(args):
             }, os.path.join(args.cache_dir, 'ckpt_{:05d}_{:02d}.pt'.\
                     format(iterations, epoch+1)))
         
-        ap_test = DetectionAPMeter(117, num_gt=test_loader.dataset.anno_action, algorithm='11P')
-        net.eval()
-        for batch in test_loader:
-            inputs = pocket.ops.relocate_to_cuda(batch[:-1])
-            with torch.no_grad():
-                output = net(*inputs)
-            if output is None:
-                continue
-
-            for result, target in zip(output, batch[-1]):
-                result = pocket.ops.relocate_to_cpu(result)
-
-                # Reformat the predicted classes and scores
-                # CLASS_IDX: [SCORE, BINARY_LABELS]
-                predictions = [{
-                    int(k.item()):[v.item(), 0]
-                    for k, v in zip(l, s)
-                } for l, s in zip(result["labels"], result["scores"])]
-                # Compute minimum IoU
-                iou = torch.min(
-                    box_iou(target['boxes_h'], result['boxes_h']),
-                    box_iou(target['boxes_o'], result['boxes_o'])
-                )
-                # Assign each detection to GT with the highest IoU
-                max_iou, max_idx = iou.max(0)
-                match = -1 * torch.ones_like(iou)
-                match[max_idx, torch.arange(iou.shape[1], device=iou.device)] = max_iou
-                match = match >= 0.5
-
-                # Associate detected box pairs with ground truth
-                for i, m in enumerate(match):
-                    target_class = target["labels"][i].item()
-                    # For each ground truth box pair, find the 
-                    # detections with sufficient IoU
-                    det_idx = m.nonzero().squeeze(1)
-                    if len(det_idx) == 0:
-                        continue
-                    # Retrieve the scores of matched detections
-                    # When target class was not predicted, fill the score as -1
-                    match_scores = torch.as_tensor([p[target_class][0]
-                        if target_class in p else -1 for p in predictions])
-                    match_idx = match_scores.argmax()
-                    # None of matched detections have predicted target class
-                    if match_scores[match_idx] == -1:
-                        continue
-                    predictions[match_idx][target_class][2] = 1
-
-                pred = torch.cat([
-                    torch.tensor(list(p.keys())) for p in predictions
-                ])
-                scores, labels = torch.cat([
-                    torch.tensor(list(p.values())) for p in predictions
-                ]).unbind(1)
-
-                ap_test.append(scores, pred, labels)
-        
         with timer:
             ap_1 = ap_train.eval()
         with timer:
-            ap_2 = ap_test.eval()
-
-        
-        print("Epoch: {} | training mAP: {:.4f}, time: {:.2f}s |"
-            "test mAP: {:.4f}, time: {:.2f}s".format(
-                epoch+1, ap_1.mean().item(), timer[0],
-                ap_2.mean().item(), timer[1]
-            ))
-        
-        timer.reset()
-
-            
+            ap_2 = test(net, test_loader)
+            print("Epoch: {} | training mAP: {:.4f}, eval. time: {:.2f}s |"
+                "test mAP: {:.4f}, total time: {:.2f}s".format(
+                    epoch+1, ap_1.mean().item(), timer[0],
+                    ap_2.mean().item(), timer[1]
+            ))     
 
 if __name__ == '__main__':
     
