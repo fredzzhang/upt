@@ -152,11 +152,12 @@ class InteractGraph(nn.Module):
                 "boxes_o": Tensor[N, 4]
                 "labels": Tensor[N]
         Returns:
-            all_box_pair_features(Tensor[P, 2*R])
+            all_box_pair_features(list[Tensor])
             all_boxes_h(list[Tensor])
             all_boxes_o(list[Tensor])
+            all_object_class(list[Tensor])
             all_labels(list[Tensor])
-            all_prior(Tensor[P, K])
+            all_prior(list[Tensor])
         """
         if self.training:
             assert targets is not None, "Targets should be passed during training"
@@ -243,9 +244,6 @@ class InteractGraph(nn.Module):
             )
 
             counter += n
-
-        all_box_pair_features = torch.cat(all_box_pair_features)
-        all_prior = torch.cat(all_prior)
 
         return all_box_pair_features, all_boxes_h, all_boxes_o, all_object_class, all_labels, all_prior
 
