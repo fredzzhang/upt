@@ -174,24 +174,14 @@ class InteractGraph(nn.Module):
             n = num_boxes[b_idx]
             device = box_features.device
 
-            human_box_idx = torch.nonzero(labels == self.human_idx).squeeze(1).tolist()
-            n_h = len(human_box_idx)
+            n_h = torch.sum(labels == self.human_idx).item()
             # Skip image when there are no detected human or object instances
             if n_h == 0 or n == 0:
                 continue
-            if n_h == n:
-                node_encodings = box_features[counter: counter+n]
-            else:
-                # Permute the boxes so that humans are on the top
-                permutation = torch.cat([
-                    torch.as_tensor(human_box_idx, device=device),
-                    torch.as_tensor([i for i in range(n) if i not in human_box_idx], device=device)
-                ])
-                coords = coords[permutation]
-                labels = labels[permutation]
-                scores = scores[permutation]
-                node_encodings = box_features[counter: counter+n][permutation]
+            if not torch.all(labels[:n_h]==self.human_idx):
+                raise AssertionError("Human detections are not permuted to the top")
 
+            node_encodings = box_features[counter: counter+n]
             # Duplicate human nodes
             h_node_encodings = node_encodings[:n_h]
             # Get the pairwise index between every human and object instance
