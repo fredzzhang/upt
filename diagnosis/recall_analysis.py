@@ -113,7 +113,7 @@ def analyse_recall(
     print(header)
     print("There are {} box pairs in total, {:.2f} per image on average\n"
         "Mean maximum recall: {:.4f}".format(
-            num_pair.sum(), num_pair.sum() / len(valid_idx), recall.mean())
+            num_pair.sum(), num_pair.float().mean(), recall.mean())
     )
 
     string = "train" if training else "test"
