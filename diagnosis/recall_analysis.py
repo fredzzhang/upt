@@ -13,6 +13,8 @@ import torch
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+
+from tqdm import tqdm
 from torchvision.ops.boxes import batched_nms, box_iou
 
 import pocket
@@ -30,13 +32,13 @@ def analyse_recall(
 
     num_gt_retrieved = torch.zeros(600)
     num_pair = []
-    for idx in valid_idx:
+    for idx in tqdm(valid_idx):
         # Load annotation
         target = to_tensor(dataset._anno[idx], input_format='dict')
         # Load detection
         detection_path = os.path.join(
             detection_dir,
-            dataset._filename(idx).replace('jpg', 'json')
+            dataset._filenames[idx].replace('jpg', 'json')
         )
         with open(detection_path, 'r') as f:
             detection = to_tensor(json.load(f), input_format='dict')
@@ -95,24 +97,27 @@ def analyse_recall(
         # Record box pair number
         num_pair.append(len(h_idx) * len(keep_idx))
         # Record retrieved ground truth instances
-        retrieved = torch.sum(
+        h_retrieved = torch.sum(
             box_iou(target["boxes_h"], boxes[h_idx]) > min_iou,
-            dim=1, dtype=torch.bool
-        ) * torch.sum(
+            dim=1)
+        o_retrieved = torch.sum(
             box_iou(target["boxes_o"], boxes[keep_idx]) > min_iou,
-            dim=1, dtype=torch.bool
-        )
+            dim=1)
+        retrieved = (h_retrieved > 0) * (o_retrieved > 0)
         for cls_idx, is_retrieved in zip(target["hoi"], retrieved):
             num_gt_retrieved[cls_idx] += is_retrieved
 
     num_pair = torch.as_tensor(num_pair)
-    recall = num_gt_retrieved / torch.as_tensor(dataset.anno_interaction)
+    recall = num_gt_retrieved / torch.as_tensor(dataset.anno_interaction, dtype=torch.float32)
     header = "Training set:" if training else "Test set:"
     print(header)
     print("There are {} box pairs in total, {:.2f} per image on average\n"
         "Mean maximum recall: {:.4f}".format(
             num_pair.sum(), num_pair.sum() / len(valid_idx), recall.mean())
     )
+
+    string = "train" if training else "test"
+    torch.save(num_pair, "{}_data.pt".format(string))
 
 def main(args):
     trainset = HICODet(
