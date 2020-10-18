@@ -36,7 +36,7 @@ class CustomisedDataset(Dataset):
     def __init__(self, dataset, detection_dir,
             # Parameters for preprocessing
             human_idx,
-            box_score_thresh_h=0.6,
+            box_score_thresh_h=0.3,
             box_score_thresh_o=0.3
             ):
 
@@ -111,22 +111,7 @@ class CustomisedEngine(DistributedLearningEngine):
         self._state.loss.backward()
         self._state.optimizer.step()
 
-        scores = []; pred = []; labels = []
-        # Collate results within the batch
-        for result_one in self._state.output:
-            scores.append(torch.cat(result_one["scores"]).detach().cpu().numpy())
-            pred.append(torch.cat(result_one["labels"]).detach().cpu().numpy())
-            labels.append(torch.cat(result_one["gt_labels"]).detach().cpu().numpy())
-        # Sync across subprocesses
-        score_list = all_gather(np.concatenate(scores))
-        pred_list = all_gather(np.concatenate(pred))
-        label_list = all_gather(np.concatenate(labels))
-        # Collate and log results in master process
-        if self._rank == 0:
-            scores = torch.from_numpy(np.concatenate(score_list))
-            pred = torch.from_numpy(np.concatenate(pred_list))
-            labels = torch.from_numpy(np.concatenate(label_list))
-            self.ap_train.append(scores, pred, labels)
+        self._synchronise_and_log_results(self._state.output, self.ap_train)
 
     def _on_end_epoch(self):
         super()._on_end_epoch()
@@ -148,6 +133,27 @@ class CustomisedEngine(DistributedLearningEngine):
             with open(os.path.join(self._cache_dir, 'ap.json'), 'w') as f:
                 json.dump(self.ap, f)
 
+    def _synchronise_and_log_results(self, output, meter):
+        scores = []; pred = []; labels = []
+        # Collate results within the batch
+        for result in output:
+            scores.append(torch.cat(result["scores"]).detach().cpu().numpy())
+            pred.append(torch.cat(result["labels"]).cpu().float().numpy())
+            labels.append(torch.cat(result["gt_labels"]).cpu().numpy())
+        # Sync across subprocesses
+        all_results = np.stack([
+            np.concatenate(scores),
+            np.concatenate(pred),
+            np.concatenate(labels)
+        ])
+        all_results_sync = all_gather(all_results)
+        # Collate and log results in master process
+        if self._rank == 0:
+            scores, pred, labels = torch.from_numpy(
+                all_results_sync
+            ).unbind(0)
+            meter.append(scores, pred, labels)
+
     def test(self, min_iou=0.5):
         """Test the network and return classification mAP"""
         # Instantiate the AP meter in the master process
@@ -156,62 +162,13 @@ class CustomisedEngine(DistributedLearningEngine):
         
         self._state.net.eval()
         for batch in self.test_loader:
-            inputs = pocket.ops.relocate_to_device(
-                batch[:-1], self._device)
+            inputs = pocket.ops.relocate_to_cuda(batch)
             with torch.no_grad():
                 results = self._state.net(*inputs)
             if results is None:
                 continue
 
-            scores_n_labels = []; pred = []
-            for result, target in zip(results, batch[-1]):
-                result = pocket.ops.relocate_to_cpu(result)
-
-                # Reformat the predicted classes and scores
-                # CLASS_IDX: [SCORE, BINARY_LABELS]
-                predictions = [{
-                    int(k.item()):[v.item(), 0]
-                    for k, v in zip(l, s)
-                } for l, s in zip(result["labels"], result["scores"])]
-                # Compute minimum IoU and apply threshold
-                match = torch.min(
-                    box_iou(target['boxes_h'], result['boxes_h']),
-                    box_iou(target['boxes_o'], result['boxes_o'])
-                ) > min_iou
-
-                # Associate detected box pairs with ground truth
-                for i, m in enumerate(match):
-                    target_class = target["labels"][i].item()
-                    # For each ground truth box pair, find the 
-                    # detections with sufficient IoU
-                    det_idx = m.nonzero().squeeze(1)
-                    if len(det_idx) == 0:
-                        continue
-                    # Assign classification labels
-                    for d_idx in det_idx.tolist():
-                        try:
-                            predictions[d_idx][target_class][1] = 1
-                        # Target class was not predicted in this detection
-                        except KeyError:
-                            continue
-
-                pred.append(np.concatenate([
-                    np.asarray(list(p.keys())) for p in predictions
-                ]))
-                scores_n_labels.append(np.concatenate([
-                    np.asarray(list(p.values())) for p in predictions
-                ]))
-            # Collect results across subprocesses
-            pred_list = all_gather(np.concatenate(pred))
-            scores_n_labels_list = all_gather(np.concatenate(scores_n_labels))
-
-            # Log results in master process
-            if self._rank == 0:
-                pred = torch.from_numpy(np.concatenate(pred_list))
-                scores, labels = torch.from_numpy(np.concatenate(
-                    scores_n_labels_list
-                )).unbind(1)
-                ap_test.append(scores, pred, labels)
+            self._synchronise_and_log_results(results, ap_test)
 
         # Evaluate mAP in master process
         if self._rank == 0:
