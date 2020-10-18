@@ -20,7 +20,7 @@ from torchvision.ops.boxes import box_iou
 
 import pocket
 from pocket.core import DistributedLearningEngine
-from pocket.utils import DetectionAPMeter, all_gather
+from pocket.utils import DetectionAPMeter, HandyTimer, all_gather
 
 def custom_collate(batch):
     images = []
@@ -116,14 +116,19 @@ class CustomisedEngine(DistributedLearningEngine):
     def _on_end_epoch(self):
         super()._on_end_epoch()
         
-        ap_test = self.test()
+        timer = HandyTimer(maxlen=2)
+        with timer:
+            ap_test = self.test()
         # Evaluate mAP, print message and save cache in the master process
         if self._rank == 0:
-            ap_train = self.ap_train.eval()
+            with timer:
+                ap_train = self.ap_train.eval()
             print("\n=>Evaluation (+{:.2f}s)\n"
-                "Epoch: {} | mAP (train): {:.4f} | mAP (test): {:.4f}".format(
+                "Epoch: {} | mAP (train): {:.4f} Time(eval): {:.2f} |"
+                " mAP (test): {:.4f} Time(total): {:.2f}".format(
                     time.time() - self._dawn, self._state.epoch,
-                    ap_train.mean().item(), ap_test.mean().item()
+                    ap_train.mean().item(), timer[1],
+                    ap_test.mean().item(), timer[0]
                 ))
             self.ap[self._state.epoch] = dict(
                 Train=ap_train.tolist(),
@@ -150,7 +155,7 @@ class CustomisedEngine(DistributedLearningEngine):
         # Collate and log results in master process
         if self._rank == 0:
             scores, pred, labels = torch.from_numpy(
-                all_results_sync
+                np.concatenate(all_results_sync, axis=1)
             ).unbind(0)
             meter.append(scores, pred, labels)
 
