@@ -3,6 +3,7 @@ import time
 import torch
 import argparse
 import torchvision
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision.ops.boxes import box_iou
 
@@ -18,7 +19,7 @@ def test(net, test_loader):
 
     ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
     net.eval()
-    for batch in test_loader:
+    for batch in tqdm(test_loader):
         inputs = pocket.ops.relocate_to_cuda(batch[:-1])
         with torch.no_grad():
             output = net(*inputs)
@@ -27,12 +28,11 @@ def test(net, test_loader):
 
         for result, target in zip(output, batch[-1]):
             result = pocket.ops.relocate_to_cpu(result)
-
             # Reformat the predicted classes and scores
             # TARGET_CLASS: [SCORE, BINARY_LABELS]
             predictions = [{
-                testset.object_n_verb_to_interaction[k2][k1]:[v.item(), 0]
-                for k1, v, k2 in zip(l, s, o)
+                testset.object_n_verb_to_interaction[o][k]:[v.item(), 0]
+                for k, v in zip(l, s)
             } for l, s, o in zip(result["labels"], result["scores"], result["object"])]
             # Compute minimum IoU
             iou = torch.min(
