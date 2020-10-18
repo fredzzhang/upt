@@ -215,7 +215,7 @@ class InteractGraph(nn.Module):
                     torch.mm(adjacency_matrix.t(), self.sub_to_obj(h_node_encodings))
                 ], 1))
 
-            if self.training:
+            if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
