@@ -226,11 +226,11 @@ def main(args):
             ap_1 = ap_train.eval()
         with timer:
             ap_2 = test(net, test_loader)
-            print("Epoch: {} | training mAP: {:.4f}, eval. time: {:.2f}s |"
-                "test mAP: {:.4f}, total time: {:.2f}s".format(
-                    epoch+1, ap_1.mean().item(), timer[0],
-                    ap_2.mean().item(), timer[1]
-            ))     
+        print("Epoch: {} | training mAP: {:.4f}, eval. time: {:.2f}s |"
+            "test mAP: {:.4f}, total time: {:.2f}s".format(
+                epoch+1, ap_1.mean().item(), timer[0],
+                ap_2.mean().item(), timer[1]
+        ))
 
 if __name__ == '__main__':
     
