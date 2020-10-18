@@ -110,7 +110,7 @@ def main(rank, args):
 
     iterations = 0
 
-    for i in range(args.num_epoch):
+    for i in range(args.num_epochs):
         #################
         # on_start_epoch
         #################
