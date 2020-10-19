@@ -16,15 +16,17 @@ def inference(net, dataloader, batch_size):
     dataset = dataloader.dataset.dataset
     net.eval()
     all_results = dict()
-    for i, batch in tqdm(enumerate(dataloader)):
+    for i, batch in enumerate(tqdm(dataloader)):
         inputs = pocket.ops.relocate_to_cuda(batch[:-1])
         with torch.no_grad():
             output = net(*inputs)
         if output is None:
             continue
+
+        output = pocket.ops.relocate_to_cpu(output)
         # Organise output results
         for j, result in enumerate(output):
-            filename = dataset.filenames(i*batch_size+j)
+            filename = dataset.filename(i*batch_size+j).split('.')[0]
 
             # Repeat boxes for each predicted class
             repeat_num = [len(l) for l in result['labels']]
@@ -36,7 +38,7 @@ def inference(net, dataloader, batch_size):
             ])
             interaction_class = torch.Tensor([
                 dataset.object_n_verb_to_interaction[o][v]
-                for v in l for o, l in zip(result['object'], result['labels'])
+                for o, l in zip(result['object'], result['labels']) for v in l
             ])
             scores = torch.cat(result['scores'])
 
@@ -52,8 +54,8 @@ def inference(net, dataloader, batch_size):
             unique_class, counts = interaction_class.unique(return_counts=True)
             n = 0
             for cls_id, cls_num in zip(unique_class, counts):
-                idx[cls_id, 0] = n
-                idx[cls_id, 1] = n + cls_num
+                idx[cls_id.long(), 0] = n
+                idx[cls_id.long(), 1] = n + cls_num
                 n += cls_num
 
             all_results[filename] = dict(
@@ -63,7 +65,7 @@ def inference(net, dataloader, batch_size):
                 ], 1)
             )
     # Cache results
-    with open('cache.pkl', 'wb') as f:
+    with open('test.pkl', 'wb') as f:
         pickle.dump(all_results, f, pickle.HIGHEST_PROTOCOL)
 
 def main(args):
