@@ -70,7 +70,7 @@ def main(args):
         print("Loading model from ", args.model_path)
         net.load_state_dict(torch.load(args.model_path)['model_state_dict'])
     if not os.path.exists(args.cache_dir):
-        os.mkdir(args.cache_dir)
+        os.makedirs(args.cache_dir)
 
     net.cuda()
 
