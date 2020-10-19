@@ -7,13 +7,12 @@ from torch.utils.data import DataLoader
 import pocket
 from pocket.data import HICODet
 
-from main3 import test
 from models import InteractGraphNet
-from utils import CustomisedDataset, custom_collate
+from utils import CustomisedDataset, custom_collate, test
 
 def main(args):
     torch.cuda.set_device(0)
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
 
     testset = HICODet(
         root=os.path.join(args.data_root,
