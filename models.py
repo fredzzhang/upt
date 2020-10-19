@@ -222,7 +222,8 @@ class InteractGraph(nn.Module):
 
             n_h = torch.sum(labels == self.human_idx).item()
             # Skip image when there are no detected human or object instances
-            if n_h == 0 or n == 0:
+            # and when there is only one detected instance
+            if n_h == 0 or n <= 1:
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise AssertionError("Human detections are not permuted to the top")
@@ -237,6 +238,9 @@ class InteractGraph(nn.Module):
             )
             # Remove pairs consisting of the same human instance
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
+            if len(x_keep) == 0:
+                # Should never happen, just to be safe
+                continue
             # Human nodes have been duplicated and will be treated independently
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
