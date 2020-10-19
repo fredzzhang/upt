@@ -195,6 +195,7 @@ class InteractGraph(nn.Module):
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
 
+            adjacency_matrix = torch.ones(n_h, n, device=device)
             for i in range(self.num_iter):
                 # Compute weights of each edge
                 weights = self.adjacency(torch.cat([
