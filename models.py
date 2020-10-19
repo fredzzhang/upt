@@ -59,6 +59,16 @@ class InteractGraph(nn.Module):
             nn.ReLU()
         )
 
+        # Spatial head to process spatial encodings
+        self.spatial_head = nn.Sequential(
+            nn.Conv2d(2, 64, 5),
+            nn.MaxPool2d(2),
+            nn.Conv2d(64, 32, 5),
+            nn.MaxPool2d(2),
+            Flatten(start_dim=1),
+            nn.Linear(5408, 2048)
+        )
+
         # Compute adjacency matrix
         self.adjacency = nn.Sequential(
             nn.Linear(node_encoding_size*2, representation_size),
@@ -139,6 +149,42 @@ class InteractGraph(nn.Module):
 
         return prior
 
+    @staticmethod
+    def get_spatial_encoding(x, y, boxes, size=64):
+        """
+        Arguments:
+            x(Tensor[M]): Indices of human boxes (paired)
+            y(Tensor[M]): Indices of object boxes (paired)
+            boxes(Tensor[N, 4])
+            size(int): Spatial resolution of the encoding
+        """
+        device = boxes.device
+
+        boxes_1 = boxes[x].clone().cpu()
+        boxes_2 = boxes[y].clone().cpu()
+
+        # Find the top left and bottom right corners
+        top_left = torch.min(boxes_1[:, :2], boxes_2[:, :2])
+        bottom_right = torch.max(boxes_1[:, 2:], boxes_2[:, 2:])
+        # Shift
+        boxes_1 -= top_left.repeat(1, 2)
+        boxes_2 -= top_left.repeat(1, 2)
+        # Scale
+        ratio = size / (bottom_right - top_left)
+        boxes_1 *= ratio.repeat(1, 2)
+        boxes_2 *= ratio.repeat(1, 2)
+        # Round to integer
+        boxes_1.round_(); boxes_2.round_()
+        boxes_1 = boxes_1.long()
+        boxes_2 = boxes_2.long()
+
+        spatial_encoding = torch.zeros(len(boxes_1), 2, size, size)
+        for i, (b1, b2) in enumerate(zip(boxes_1, boxes_2)):
+            spatial_encoding[i, 0, b1[1]:b1[3], b1[0]:b1[2]] = 1
+            spatial_encoding[i, 1, b2[1]:b2[3], b2[0]:b2[2]] = 1
+
+        return spatial_encoding.to(device)
+
     def forward(self, features, box_features, box_coords, box_labels, box_scores, targets=None):
         """
         Arguments:
@@ -195,6 +241,10 @@ class InteractGraph(nn.Module):
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
 
+            # Compute spatial encoding and edge features
+            spatial_encodings = self.get_spatial_encoding(x_keep, y_keep, coords)
+            edge_features = self.spatial_head(spatial_encodings)
+
             adjacency_matrix = torch.ones(n_h, n, device=device)
             for i in range(self.num_iter):
                 # Compute weights of each edge
@@ -222,7 +272,7 @@ class InteractGraph(nn.Module):
                 )
                 
             all_box_pair_features.append(torch.cat([
-                h_node_encodings[x_keep], node_encodings[y_keep]
+                h_node_encodings[x_keep], node_encodings[y_keep], edge_features
             ], 1))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
