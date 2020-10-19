@@ -3,7 +3,6 @@ import time
 import torch
 import argparse
 import torchvision
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision.ops.boxes import box_iou
 
@@ -12,67 +11,7 @@ from pocket.data import HICODet
 from pocket.utils import NumericalMeter, DetectionAPMeter, HandyTimer
 
 from models import InteractGraphNet
-from utils import custom_collate, CustomisedDataset
-
-def test(net, test_loader):
-    testset = test_loader.dataset.dataset
-
-    ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
-    net.eval()
-    for batch in tqdm(test_loader):
-        inputs = pocket.ops.relocate_to_cuda(batch[:-1])
-        with torch.no_grad():
-            output = net(*inputs)
-        if output is None:
-            continue
-
-        for result, target in zip(output, batch[-1]):
-            result = pocket.ops.relocate_to_cpu(result)
-            # Reformat the predicted classes and scores
-            # TARGET_CLASS: [SCORE, BINARY_LABELS]
-            predictions = [{
-                testset.object_n_verb_to_interaction[o][k]:[v.item(), 0]
-                for k, v in zip(l, s)
-            } for l, s, o in zip(result["labels"], result["scores"], result["object"])]
-            # Compute minimum IoU
-            iou = torch.min(
-                box_iou(target['boxes_h'], result['boxes_h']),
-                box_iou(target['boxes_o'], result['boxes_o'])
-            )
-            # Assign each detection to GT with the highest IoU
-            max_iou, max_idx = iou.max(0)
-            match = -1 * torch.ones_like(iou)
-            match[max_idx, torch.arange(iou.shape[1], device=iou.device)] = max_iou
-            match = match >= 0.5
-
-            # Associate detected box pairs with ground truth
-            for i, m in enumerate(match):
-                target_class = target["hoi"][i].item()
-                # For each ground truth box pair, find the
-                # detections with sufficient IoU
-                det_idx = m.nonzero().squeeze(1)
-                if len(det_idx) == 0:
-                    continue
-                # Retrieve the scores of matched detections
-                # When target class was not predicted, fill the score as -1
-                match_scores = torch.as_tensor([p[target_class][0]
-                    if target_class in p else -1 for p in predictions])
-                match_idx = match_scores.argmax()
-                # None of matched detections have predicted target class
-                if match_scores[match_idx] == -1:
-                    continue
-                predictions[match_idx][target_class][1] = 1
-
-            pred = torch.cat([
-                torch.tensor(list(p.keys())) for p in predictions
-            ])
-            scores, labels = torch.cat([
-                torch.tensor(list(p.values())) for p in predictions
-            ]).unbind(1)
-
-            ap_test.append(scores, pred, labels)
-
-    return ap_test.eval()
+from utils import custom_collate, CustomisedDataset, test
 
 def main(args):
 
