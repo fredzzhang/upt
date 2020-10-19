@@ -268,7 +268,9 @@ class InteractGraphNet(models.GenericHOINetwork):
             min_size=800, max_size=1333,
             image_mean=None, image_std=None,
             # Preprocessing parameters
-            box_nms_thresh=0.5
+            box_nms_thresh=0.5,
+            max_human=10,
+            max_object=10
             ):
 
         backbone = models.fasterrcnn_resnet_fpn(backbone_name,
@@ -303,7 +305,9 @@ class InteractGraphNet(models.GenericHOINetwork):
             box_pair_head=box_pair_head,
             box_pair_predictor=box_pair_predictor,
             human_idx=human_idx,
-            box_nms_thresh=box_nms_thresh
+            box_nms_thresh=box_nms_thresh,
+            max_human=max_human,
+            max_object=max_object
         )
 
         if image_mean is None:
