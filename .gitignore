@@ -4,3 +4,9 @@ __pycache__/
 # MacOS
 .DS_Store
 ._.DS_Store
+
+# Cache
+log
+out
+temp*
+checkpoints
