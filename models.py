@@ -48,20 +48,27 @@ class BipartiteGraph(nn.Module):
             nn.Linear(node_encoding_size, representation_size),
             nn.ReLU()
         )
+        self.u_to_v_norm = nn.LayerNorm(representation_size)
+
         self.v_to_u = nn.Sequential(
             nn.Linear(node_encoding_size, representation_size),
             nn.ReLU()
         )
+        self.v_to_u_norm = nn.LayerNorm(representation_size)
 
-        self.u_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
+        self.u_update = nn.Sequential(
+            nn.Linear(
+                node_encoding_size + representation_size,
+                node_encoding_size,
+                bias=False),
+            nn.LayerNorm(node_encoding_size)
         )
-        self.v_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
+        self.v_update = nn.Sequential(
+            nn.Linear(
+                node_encoding_size + representation_size,
+                node_encoding_size,
+                bias=False),
+            nn.LayerNorm(node_encoding_size)
         )
 
     def forward(self, encodings_u, encodings_v, u=None, v=None):
@@ -93,14 +100,16 @@ class BipartiteGraph(nn.Module):
 
             # Update parts U
             encodings_u = self.u_update(torch.cat([
-                encodings_u,
-                torch.mm(adjacency_matrix, self.v_to_u(encodings_v))
+                encodings_u, self.v_to_u_norm(
+                    torch.mm(adjacency_matrix, self.v_to_u(encodings_v))
+                )
             ], 1))
 
             # Updaet parts V
             encodings_v = self.v_update(torch.cat([
-                encodings_v,
-                torch.mm(adjacency_matrix.t(), self.u_to_v(encodings_u))
+                encodings_v, self.u_to_v_norm(torch.mm(
+                    adjacency_matrix.t(), self.u_to_v(encodings_u))
+                )
             ], 1))
 
         return encodings_u, encodings_v, adjacency_matrix
@@ -136,7 +145,8 @@ class BoxPairHead(nn.Module):
             nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
             nn.ReLU(),
             nn.Linear(node_encoding_size, node_encoding_size),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.LayerNorm(node_encoding_size)
         )
 
         # Spatial head to process spatial encodings
@@ -311,8 +321,8 @@ class BoxPairHead(nn.Module):
                 )
                 
             all_box_pair_features.append(torch.cat([
-                h_node_encodings[x_keep], node_encodings[y_keep], edge_features
-            ], 1))
+                h_node_encodings[x_keep], node_encodings[y_keep]
+            ], 1) * edge_features)
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
