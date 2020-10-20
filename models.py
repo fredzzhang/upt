@@ -404,6 +404,7 @@ class InteractGraphNet(models.GenericHOINetwork):
             box_roi_pool=box_roi_pool,
             box_pair_head=box_pair_head,
             box_pair_predictor=box_pair_predictor,
+            num_classes=num_classes,
             human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
             max_human=max_human,
