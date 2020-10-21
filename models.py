@@ -26,6 +26,9 @@ def LIS(x, T=8.3, k=12, w=10):
     return T / ( 1 + torch.exp(k - w * x)) 
 
 class BipartiteGraph(nn.Module):
+    """
+    Bipartite graph with parts U and V
+    """
     def __init__(self,
             node_encoding_size,
             representation_size,
@@ -100,16 +103,18 @@ class BipartiteGraph(nn.Module):
 
             # Update parts U
             encodings_u = self.u_update(torch.cat([
-                encodings_u, self.v_to_u_norm(
-                    torch.mm(adjacency_matrix, self.v_to_u(encodings_v))
-                )
+                encodings_u, self.v_to_u_norm(torch.mm(
+                    adjacency_matrix,
+                    self.v_to_u(encodings_v)
+                ))
             ], 1))
 
             # Updaet parts V
             encodings_v = self.v_update(torch.cat([
                 encodings_v, self.u_to_v_norm(torch.mm(
-                    adjacency_matrix.t(), self.u_to_v(encodings_u))
-                )
+                    adjacency_matrix.t(),
+                    self.u_to_v(encodings_u)
+                ))
             ], 1))
 
         return encodings_u, encodings_v, adjacency_matrix
