@@ -185,11 +185,12 @@ class InteractGraph(nn.Module):
 
         return spatial_encoding.to(device)
 
-    def forward(self, features, box_features, box_coords, box_labels, box_scores, targets=None):
+    def forward(self, features, image_shapes, box_features, box_coords, box_labels, box_scores, targets=None):
         """
         Arguments:
             features(OrderedDict[Tensor]): Image pyramid with different levels
             box_features(Tensor[M, R])
+            image_shapes(List[Tuple[height, width]])
             box_coords(List[Tensor])
             box_labels(List[Tensor])
             box_scores(List[Tensor])
