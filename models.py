@@ -25,101 +25,7 @@ def LIS(x, T=8.3, k=12, w=10):
     """
     return T / ( 1 + torch.exp(k - w * x)) 
 
-class BipartiteGraph(nn.Module):
-    """
-    Bipartite graph with parts U and V
-    """
-    def __init__(self,
-            node_encoding_size,
-            representation_size,
-            num_iter,
-        ):
-        super().__init__()
-
-        self.num_iter = num_iter
-
-        self.adjacency = nn.Sequential(
-            nn.Linear(node_encoding_size*2, representation_size),
-            nn.ReLU(),
-            nn.Linear(representation_size, int(representation_size/2)),
-            nn.ReLU(),
-            nn.Linear(int(representation_size/2), 1),
-            nn.Sigmoid()
-        )
-
-        self.u_to_v = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
-        self.u_to_v_norm = nn.LayerNorm(representation_size)
-
-        self.v_to_u = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
-        self.v_to_u_norm = nn.LayerNorm(representation_size)
-
-        self.u_update = nn.Sequential(
-            nn.Linear(
-                node_encoding_size + representation_size,
-                node_encoding_size,
-                bias=False),
-            nn.LayerNorm(node_encoding_size)
-        )
-        self.v_update = nn.Sequential(
-            nn.Linear(
-                node_encoding_size + representation_size,
-                node_encoding_size,
-                bias=False),
-            nn.LayerNorm(node_encoding_size)
-        )
-
-    def forward(self, encodings_u, encodings_v, u=None, v=None):
-        """
-        Arguments:
-            encodings_u(Tensor[N, K]): Node encodings for parts U
-            encodings_v(Tensor[M, K]): Node encodings for parts V
-            u(Tensor[M x N]): Indices (paired) for nodes in U
-            v(Tensor[M x N]): Indices (paired) for nodes in V
-        """
-        n_u = len(encodings_u)
-        n_v = len(encodings_v)
-
-        device = encodings_u.device
-        if u is None or v is None:
-            u, v = torch.meshgrid(
-                torch.arange(n_u, device=device),
-                torch.arange(n_v, device=device)
-            )
-            u = u.flatten(); v = v.flatten()
-
-        adjacency_matrix = torch.ones(n_u, n_v, device=device)
-        for _ in range(self.num_iter):
-            # Compute adjacency matrix
-            weights = self.adjacency(torch.cat([
-                encodings_u[u], encodings_v[v]
-            ], 1))
-            adjacency_matrix = weights.reshape(n_u, n_v)
-
-            # Update parts U
-            encodings_u = self.u_update(torch.cat([
-                encodings_u, self.v_to_u_norm(torch.mm(
-                    adjacency_matrix,
-                    self.v_to_u(encodings_v)
-                ))
-            ], 1))
-
-            # Updaet parts V
-            encodings_v = self.v_update(torch.cat([
-                encodings_v, self.u_to_v_norm(torch.mm(
-                    adjacency_matrix.t(),
-                    self.u_to_v(encodings_u)
-                ))
-            ], 1))
-
-        return encodings_u, encodings_v, adjacency_matrix
-
-class BoxPairHead(nn.Module):
+class InteractGraph(nn.Module):
     def __init__(self,
                 out_channels,
                 roi_pool_size,
@@ -150,8 +56,7 @@ class BoxPairHead(nn.Module):
             nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
             nn.ReLU(),
             nn.Linear(node_encoding_size, node_encoding_size),
-            nn.ReLU(),
-            nn.LayerNorm(node_encoding_size)
+            nn.ReLU()
         )
 
         # Spatial head to process spatial encodings
@@ -164,11 +69,36 @@ class BoxPairHead(nn.Module):
             nn.Linear(5408, 2048)
         )
 
-        # Bipartite graph
-        self.bipartite_graph = BipartiteGraph(
+        # Compute adjacency matrix
+        self.adjacency = nn.Sequential(
+            nn.Linear(node_encoding_size*2, representation_size),
+            nn.ReLU(),
+            nn.Linear(representation_size, int(representation_size/2)),
+            nn.ReLU(),
+            nn.Linear(int(representation_size/2), 1),
+            nn.Sigmoid()
+        )
+
+        # Compute messages
+        self.sub_to_obj = nn.Sequential(
+            nn.Linear(node_encoding_size, representation_size),
+            nn.ReLU()
+        )
+        self.obj_to_sub = nn.Sequential(
+            nn.Linear(node_encoding_size, representation_size),
+            nn.ReLU()
+        )
+
+        # Update node hidden states
+        self.sub_update = nn.Linear(
+            node_encoding_size + representation_size,
             node_encoding_size,
-            representation_size,
-            num_iter
+            bias=False
+        )
+        self.obj_update = nn.Linear(
+            node_encoding_size + representation_size,
+            node_encoding_size,
+            bias=False
         )
 
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
@@ -311,14 +241,34 @@ class BoxPairHead(nn.Module):
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
                 continue
+            # Human nodes have been duplicated and will be treated independently
+            # of the humans included amongst object nodes
+            x = x.flatten(); y = y.flatten()
 
             # Compute spatial encoding and edge features
             spatial_encodings = self.get_spatial_encoding(x_keep, y_keep, coords)
             edge_features = self.spatial_head(spatial_encodings)
-            # Run bipartite graph
-            h_node_encodings, node_encodings, adjacency_matrix = self.bipartite_graph(
-                h_node_encodings, node_encodings
-            )
+
+            adjacency_matrix = torch.ones(n_h, n, device=device)
+            for i in range(self.num_iter):
+                # Compute weights of each edge
+                weights = self.adjacency(torch.cat([
+                    h_node_encodings[x],
+                    node_encodings[y]
+                ], 1))
+                adjacency_matrix = weights.reshape(n_h, n)
+
+                # Update human nodes
+                h_node_encodings = self.sub_update(torch.cat([
+                    h_node_encodings,
+                    torch.mm(adjacency_matrix, self.obj_to_sub(node_encodings))
+                ], 1))
+
+                # Update object nodes (including human nodes)
+                node_encodings = self.obj_update(torch.cat([
+                    node_encodings,
+                    torch.mm(adjacency_matrix.t(), self.sub_to_obj(h_node_encodings))
+                ], 1))
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
