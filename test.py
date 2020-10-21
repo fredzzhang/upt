@@ -26,7 +26,9 @@ def main(args):
         dataset=CustomisedDataset(testset,
             os.path.join(args.data_root,
             "fasterrcnn_resnet50_fpn_detections/test2015"),
-            human_idx=49
+            human_idx=49,
+            box_score_thresh_h=args.human_thresh,
+            box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True
     )
@@ -58,6 +60,8 @@ if __name__ == "__main__":
                         help="Number of iterations to run message passing")
     parser.add_argument('--batch-size', default=2, type=int,
                         help="Batch size for each subprocess")
+    parser.add_argument('--human-thresh', default=0.5, type=float)
+    parser.add_argument('--object-thresh', default=0.5, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
     
