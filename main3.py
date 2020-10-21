@@ -116,6 +116,8 @@ def main(args):
             ####################
             optimizer.zero_grad()
             output = net(*batch_cuda)
+            if output is None:
+                continue
             loss = output.pop()
             loss.backward()
             optimizer.step()
