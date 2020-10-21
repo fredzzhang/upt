@@ -337,7 +337,7 @@ class InteractGraphNet(models.GenericHOINetwork):
             sampling_ratio=sampling_ratio
         )
 
-        box_pair_head = BoxPairHead(
+        box_pair_head = InteractGraph(
             out_channels=backbone.out_channels,
             roi_pool_size=output_size,
             node_encoding_size=node_encoding_size,
