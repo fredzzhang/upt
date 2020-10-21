@@ -192,7 +192,7 @@ if __name__ == '__main__':
                         help="Batch size for each subprocess")
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
-    parser.add_argument('--milestones', nargs='+', default=[10, 15],
+    parser.add_argument('--milestones', nargs='+', default=[10, 15], type=int,
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--print-interval', default=100, type=int)
