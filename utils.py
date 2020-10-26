@@ -40,7 +40,7 @@ class CustomisedDataset(Dataset):
             human_idx,
             box_score_thresh_h=0.3,
             box_score_thresh_o=0.3,
-            flip=False
+            flip=True
             ):
 
         self.dataset = dataset
