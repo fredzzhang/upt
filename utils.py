@@ -16,6 +16,7 @@ import numpy as np
 from tqdm import tqdm
 import torch.distributed as dist
 
+from PIL import ImageOps
 from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_iou
 
@@ -38,7 +39,8 @@ class CustomisedDataset(Dataset):
             # Parameters for preprocessing
             human_idx,
             box_score_thresh_h=0.3,
-            box_score_thresh_o=0.3
+            box_score_thresh_o=0.3,
+            flip=False
             ):
 
         self.dataset = dataset
@@ -47,6 +49,11 @@ class CustomisedDataset(Dataset):
         self.human_idx = human_idx
         self.box_score_thresh_h = box_score_thresh_h
         self.box_score_thresh_o = box_score_thresh_o
+
+        if flip:
+            self._flip = torch.randint(0, 2, (len(dataset),))
+        else:
+            self._flip = torch.zeros(len(dataset))
 
     def __len__(self):
         return len(self.dataset)
@@ -75,6 +82,14 @@ class CustomisedDataset(Dataset):
 
         return dict(boxes=boxes, labels=labels, scores=scores)
 
+    def flip_boxes(self, detection, target, w):
+        detection["boxes"][:, 0] = w - detection["boxes"][:, 0]
+        detection["boxes"][:, 2] = w - detection["boxes"][:, 2]
+        target["boxes_h"][:, 0] = w - target["boxes_h"][:, 0]
+        target["boxes_h"][:, 2] = w - target["boxes_h"][:, 2]
+        target["boxes_o"][:, 0] = w - target["boxes_o"][:, 0]
+        target["boxes_o"][:, 2] = w - target["boxes_o"][:, 2]
+
     def __getitem__(self, i):
         image, target = self.dataset[i]
         target['labels'] = target['verb']
@@ -88,6 +103,10 @@ class CustomisedDataset(Dataset):
                 input_format='dict')
 
         detection = self.filter_detections(detection)
+
+        if self._flip[i]:
+            image = ImageOps.mirror(image)
+            self.flip_boxes(detection, target, image.size[0])
 
         return [image], [detection], [target]
 
