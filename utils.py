@@ -16,7 +16,6 @@ import numpy as np
 from tqdm import tqdm
 import torch.distributed as dist
 
-from PIL import ImageOps
 from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_iou
 
@@ -105,8 +104,8 @@ class CustomisedDataset(Dataset):
         detection = self.filter_detections(detection)
 
         if self._flip[i]:
-            image = ImageOps.mirror(image)
-            self.flip_boxes(detection, target, image.size[0])
+            image = torch.flip(image, dims=(2,))
+            self.flip_boxes(detection, target, image.shape[2])
 
         return [image], [detection], [target]
 
