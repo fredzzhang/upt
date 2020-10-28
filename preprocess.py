@@ -12,50 +12,55 @@ from pocket.data import HICODet
 from models import InteractGraphNet
 from utils import custom_collate, CustomisedDataset
 
+@torch.no_grad()
+def forward(net, batch, idx, batch_size, training):
+    batch_cuda = pocket.ops.relocate_to_cuda(batch)
+    images, detections, targets = batch_cuda
+    # Preprocess
+    images, detections, targets, original_image_sizes = net.preprocess(
+        images, detections, targets
+    )
+    # Run backbone CNN
+    features = net.backbone(images.tensors)
+    # Run interaction head
+    detections = net.interaction_head.preprocess(
+        detections, targets, append_gt=training
+    )
+    box_coords = [detection['boxes'] for detection in detections]
+    box_labels = [detection['labels'] for detection in detections]
+    box_scores = [detection['scores'] for detection in detections]
+    box_features = net.interaction_head.box_roi_pool(
+        features, box_coords, images.image_sizes
+    )
+    # Run box pair head
+    box_pair_features, boxes_h, boxes_o, object_class,\
+    box_pair_labels, box_pair_prior = net.interaction_head.box_pair_head(
+        features, images.image_sizes, box_features,
+        box_coords, box_labels, box_scores, targets
+    )
+    results = []
+    for b_idx, (f, b_h, b_o, obj, l, p) in enumerate(zip(
+        box_pair_features, boxes_h, boxes_o, object_class,
+        box_pair_labels, box_pair_prior
+    )):
+        # Skip images without valid box pairs
+        if len(f) == 0:
+            continue
+        results.append(dict(
+            features=f, boxes_h=b_h, boxes_o=b_o,
+            object_class=obj, labels=l, prior=p,
+            index=torch.tensor(idx * batch_size + b_idx)
+        ))
+    return pocket.ops.relocate_to_cpu(net.transform.postprocess(
+        results, images.image_sizes,
+        original_image_sizes
+    ))
+
+
 def preprocess(net, dataloader, training, cache_path):
     all_results = []
     for idx, batch in enumerate(tqdm(dataloader)):
-        batch_cuda = pocket.ops.relocate_to_cuda(batch)
-        images, detections, targets = batch_cuda
-        # Preprocess
-        images, detections, targets, original_image_sizes = net.preprocess(
-            images, detections, targets
-        )
-        # Run backbone CNN
-        features = net.backbone(images.tensors)
-        # Run interaction head
-        detections = net.interaction_head.preprocess(
-            detections, targets, append_gt=training
-        )
-        box_coords = [detection['boxes'] for detection in detections]
-        box_labels = [detection['labels'] for detection in detections]
-        box_scores = [detection['scores'] for detection in detections]
-        box_features = net.interaction_head.box_roi_pool(
-            features, box_coords, images.image_sizes
-        )
-        # Run box pair head
-        box_pair_features, boxes_h, boxes_o, object_class,\
-        box_pair_labels, box_pair_prior = net.interaction_head.box_pair_head(
-            features, images.image_sizes, box_features,
-            box_coords, box_labels, box_scores, targets
-        )
-        results = []
-        for b_idx, (f, b_h, b_o, obj, l, p) in enumerate(zip(
-            box_pair_features, boxes_h, boxes_o, object_class,
-            box_pair_labels, box_pair_prior
-        )):
-            # Skip images without valid box pairs
-            if len(f) == 0:
-                continue
-            results.append(dict(
-                features=f, boxes_h=b_h, boxes_o=b_o,
-                object_class=obj, labels=l, prior=p,
-                index=idx * dataloader.batch_size + b_idx
-            ))
-        results = net.transform.postprocess(
-            results, images.image_sizes,
-            original_image_sizes
-        )
+        results = forward(net, batch, idx, dataloader.batch_size, training)
         all_results += results
     with open(cache_path, 'wb') as f:
         pickle.dump(all_results, f, pickle.HIGHEST_PROTOCOL)
