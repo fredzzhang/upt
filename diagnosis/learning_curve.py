@@ -50,7 +50,8 @@ def plot_learning_curve(source):
         plt.plot(data[k][:, 1], color=c, linewidth=2, label='{} test'.format(labels[k]))
     plt.xlabel("Epoch")
     plt.ylabel("mAP")
-    plt.legend()
+    leg = plt.legend()
+    leg.set_draggable(True)
     plt.show()
 
 if __name__ == "__main__":
