@@ -3,6 +3,7 @@ import time
 import torch
 import argparse
 import torchvision
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision.ops.boxes import box_iou
 
@@ -11,7 +12,25 @@ from pocket.data import HICODet
 from pocket.utils import NumericalMeter, DetectionAPMeter, HandyTimer
 
 from models import InteractGraphNet
-from utils import custom_collate, CustomisedDataset, test
+from utils import custom_collate, CustomisedDataset
+
+@torch.no_grad()
+def test(net, test_loader):
+    net.eval()
+    ap_test = DetectionAPMeter(117, algorithm='11P')
+    for batch in tqdm(test_loader):
+        batch_cuda = pocket.ops.relocate_to_cuda(batch)
+        output = net(*batch_cuda)
+        if output is None:
+            continue
+        for result in output:
+            ap_test.append(
+                result['scores'],
+                result['prediction'],
+                result['labels']
+            )
+
+    return ap_test.eval()
 
 def main(args):
 
@@ -64,7 +83,8 @@ def main(args):
 
     net = InteractGraphNet(
         trainset.object_to_verb, 49,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        postprocess=False
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
@@ -102,7 +122,7 @@ def main(args):
         # on_start_epoch
         #################
         net.train()
-        ap_train = DetectionAPMeter(117, algorithm='INT')
+        ap_train = DetectionAPMeter(117, algorithm='11P')
         timestamp = time.time()
         for batch in train_loader:
             ####################
@@ -122,15 +142,12 @@ def main(args):
             loss.backward()
             optimizer.step()
 
-            if output is None:
-                continue
-
             # Collate results within the batch
             for result in output:
                 ap_train.append(
-                    torch.cat(result["scores"]),
-                    torch.cat(result["labels"]),
-                    torch.cat(result["gt_labels"])
+                    result['scores'],
+                    result['prediction'],
+                    result['labels']
                 )
             ####################
             # on_end_iteration
