@@ -106,12 +106,19 @@ def test(net, test_loader):
 
         for result, target in zip(output, batch[-1]):
             result = pocket.ops.relocate_to_cpu(result)
+
+            box_idx = result['index']
+            _, num = torch.unique(box_idx, return_counts=True)
             # Reformat the predicted classes and scores
             # TARGET_CLASS: [SCORE, BINARY_LABELS]
             predictions = [{
-                testset.object_n_verb_to_interaction[o][k]:[v.item(), 0]
-                for k, v in zip(l, s)
-            } for l, s, o in zip(result["labels"], result["scores"], result["object"])]
+                testset.object_n_verb_to_interaction[o][v]:[s.item(), 0]
+                for v, s in zip(verbs, scores)
+                } for verbs, scores, o in zip(
+                    result['prediction'].split(num),
+                    result['scores'].split(num),
+                    result['object']
+            )]
             # Compute minimum IoU
             match = torch.min(
                 box_iou(target['boxes_h'], result['boxes_h']),
