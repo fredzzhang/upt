@@ -13,12 +13,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-def LIS(x, T=8.3, k=12, w=10):
-    """
-    Low-grade suppression
-    https://github.com/DirtyHarryLYL/Transferable-Interactiveness-Network
-    """
-    return T / ( 1 + torch.exp(k - w * x)) 
+from ops import LIS
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
