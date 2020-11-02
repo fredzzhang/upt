@@ -16,232 +16,65 @@ from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 
 import pocket.models as models
-from pocket.ops import Flatten
 
-def LIS(x, T=8.3, k=12, w=10):
+from transforms import HOINetworkTransform
+from interaction_head import InteractionHead, InteractGraph
+
+class GenericHOINetwork(nn.Module):
+    """A generic architecture for HOI classification
+
+    Arguments:
+        backbone(nn.Module)
+        interaction_head(nn.Module)
+        transform(nn.Module)
+        postprocess(bool): If True, rescale bounding boxes to original image size
     """
-    Low-grade suppression
-    https://github.com/DirtyHarryLYL/Transferable-Interactiveness-Network
-    """
-    return T / ( 1 + torch.exp(k - w * x)) 
-
-class InteractGraph(nn.Module):
-    def __init__(self,
-                out_channels,
-                roi_pool_size,
-                node_encoding_size, 
-                representation_size, 
-                num_cls, human_idx,
-                object_class_to_target_class,
-                fg_iou_thresh=0.5,
-                num_iter=1):
-
+    def __init__(self, backbone, interaction_head, transform, postprocess=True):
         super().__init__()
+        self.backbone = backbone
+        self.interaction_head = interaction_head
+        self.transform = transform
 
-        self.out_channels = out_channels
-        self.roi_pool_size = roi_pool_size
-        self.node_encoding_size = node_encoding_size
-        self.representation_size = representation_size
+        self.postprocess = postprocess
 
-        self.num_cls = num_cls
-        self.human_idx = human_idx
-        self.object_class_to_target_class = object_class_to_target_class
+    def preprocess(self, images, detections, targets=None):
+        original_image_sizes = [img.shape[-2:] for img in images]
+        images, targets = self.transform(images, targets)
 
-        self.fg_iou_thresh = fg_iou_thresh
-        self.num_iter = num_iter
+        for det, o_im_s, im_s in zip(
+            detections, original_image_sizes, images.image_sizes
+        ):
+            boxes = det['boxes']
+            boxes = transform.resize_boxes(boxes, o_im_s, im_s)
+            det['boxes'] = boxes
 
-        # Box head to map RoI features to low dimensional
-        self.box_head = nn.Sequential(
-            Flatten(start_dim=1),
-            nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
-            nn.ReLU(),
-            nn.Linear(node_encoding_size, node_encoding_size),
-            nn.ReLU()
-        )
+        return images, detections, targets, original_image_sizes
 
-        # Compute adjacency matrix
-        self.adjacency = nn.Sequential(
-            nn.Linear(node_encoding_size*2, representation_size),
-            nn.ReLU(),
-            nn.Linear(representation_size, int(representation_size/2)),
-            nn.ReLU(),
-            nn.Linear(int(representation_size/2), 1),
-            nn.Sigmoid()
-        )
-
-        # Compute messages
-        self.sub_to_obj = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
-        self.obj_to_sub = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
-
-        # Update node hidden states
-        self.sub_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
-        )
-        self.obj_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
-        )
-
-    def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
-        """
-        Arguements:
-            boxes_h(Tensor[N, 4])
-            boxes_o(Tensor[N, 4])
-            targets(dict[Tensor]): Targets in an image with the following keys
-                "boxes_h": Tensor[N, 4]
-                "boxes_o": Tensor[N, 4)
-                "labels": Tensor[N]
-        """
-        n = boxes_h.shape[0]
-        labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
-
-        x, y = torch.nonzero(torch.min(
-            box_ops.box_iou(boxes_h, targets["boxes_h"]),
-            box_ops.box_iou(boxes_o, targets["boxes_o"])
-        ) >= self.fg_iou_thresh).unbind(1)
-
-        labels[x, targets["labels"][y]] = 1
-
-        return labels
-
-    def compute_prior_scores(self, x, y, scores, object_class):
+    def forward(self, images, detections, targets=None):
         """
         Arguments:
-            x(Tensor[M]): Indices of human boxes (paired)
-            y(Tensor[M]): Indices of object boxes (paired)
-            scores(Tensor[N])
-            object_class(Tensor[N])
+            images(list[Tensor])
+            detections(list[dict])
+            targets(list[dict])
         """
-        prior = torch.zeros(len(x), self.num_cls, device=scores.device)
+        if self.training and targets is None:
+            raise ValueError("In training mode, targets should be passed")
 
-        # Product of human and object detection scores with LIS
-        prod = LIS(scores[x]) * LIS(scores[y])
+        images, detections, targets, original_image_sizes = self.preprocess(
+                images, detections, targets)
 
-        # Map object class index to target class index
-        # Object class index to target class index is a one-to-many mapping
-        target_cls_idx = [self.object_class_to_target_class[obj]
-            for obj in object_class[y]]
-        # Duplicate box pair indices for each target class
-        pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
-        # Flatten mapped target indices
-        flat_target_idx = [t for tar in target_cls_idx for t in tar]
+        features = self.backbone(images.tensors)
+        results = self.interaction_head(features, detections, 
+            images.image_sizes, targets)
 
-        prior[pair_idx, flat_target_idx] = prod[pair_idx]
-
-        return prior
-
-    def forward(self, features, image_shapes, box_features, box_coords, box_labels, box_scores, targets=None):
-        """
-        Arguments:
-            features(OrderedDict[Tensor]): Image pyramid with different levels
-            box_features(Tensor[M, R])
-            image_shapes(List[Tuple[height, width]])
-            box_coords(List[Tensor])
-            box_labels(List[Tensor])
-            box_scores(List[Tensor])
-            targets(list[dict]): Interaction targets with the following keys
-                "boxes_h": Tensor[N, 4]
-                "boxes_o": Tensor[N, 4]
-                "labels": Tensor[N]
-        Returns:
-            all_box_pair_features(list[Tensor])
-            all_boxes_h(list[Tensor])
-            all_boxes_o(list[Tensor])
-            all_object_class(list[Tensor])
-            all_labels(list[Tensor])
-            all_prior(list[Tensor])
-        """
-        if self.training:
-            assert targets is not None, "Targets should be passed during training"
-
-        box_features = self.box_head(box_features)
-
-        num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
-        
-        counter = 0
-        all_boxes_h = []; all_boxes_o = []; all_object_class = []
-        all_labels = []; all_prior = []
-        all_box_pair_features = []
-        for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
-            n = num_boxes[b_idx]
-            device = box_features.device
-
-            n_h = torch.sum(labels == self.human_idx).item()
-            # Skip image when there are no detected human or object instances
-            # and when there is only one detected instance
-            if n_h == 0 or n <= 1:
-                continue
-            if not torch.all(labels[:n_h]==self.human_idx):
-                raise AssertionError("Human detections are not permuted to the top")
-
-            node_encodings = box_features[counter: counter+n]
-            # Duplicate human nodes
-            h_node_encodings = node_encodings[:n_h]
-            # Get the pairwise index between every human and object instance
-            x, y = torch.meshgrid(
-                torch.arange(n_h, device=device),
-                torch.arange(n, device=device)
+        if self.postprocess and results is not None:
+            return self.transform.postprocess(
+                results,
+                images.image_sizes,
+                original_image_sizes
             )
-            # Remove pairs consisting of the same human instance
-            x_keep, y_keep = torch.nonzero(x != y).unbind(1)
-            if len(x_keep) == 0:
-                # Should never happen, just to be safe
-                continue
-            # Human nodes have been duplicated and will be treated independently
-            # of the humans included amongst object nodes
-            x = x.flatten(); y = y.flatten()
-
-            adjacency_matrix = torch.ones(n_h, n, device=device)
-            for i in range(self.num_iter):
-                # Compute weights of each edge
-                weights = self.adjacency(torch.cat([
-                    h_node_encodings[x],
-                    node_encodings[y]
-                ], 1))
-                adjacency_matrix = weights.reshape(n_h, n)
-
-                # Update human nodes
-                h_node_encodings = self.sub_update(torch.cat([
-                    h_node_encodings,
-                    torch.mm(adjacency_matrix, self.obj_to_sub(node_encodings))
-                ], 1))
-
-                # Update object nodes (including human nodes)
-                node_encodings = self.obj_update(torch.cat([
-                    node_encodings,
-                    torch.mm(adjacency_matrix.t(), self.sub_to_obj(h_node_encodings))
-                ], 1))
-
-            if targets is not None:
-                all_labels.append(self.associate_with_ground_truth(
-                    coords[x_keep], coords[y_keep], targets[b_idx])
-                )
-                
-            all_box_pair_features.append(torch.cat([
-                h_node_encodings[x_keep], node_encodings[y_keep]
-            ], 1))
-            all_boxes_h.append(coords[x_keep])
-            all_boxes_o.append(coords[y_keep])
-            all_object_class.append(labels[y_keep])
-            # The prior score is the product between edge weights and the
-            # pre-computed object detection scores with LIS
-            all_prior.append(
-                adjacency_matrix[x_keep, y_keep, None] *
-                self.compute_prior_scores(x_keep, y_keep, scores, labels)
-            )
-
-            counter += n
-
-        return all_box_pair_features, all_boxes_h, all_boxes_o, all_object_class, all_labels, all_prior
+        else:
+            return results
 
 class BoxPairPredictor(nn.Module):
     def __init__(self, input_size, representation_size, num_classes):
@@ -254,10 +87,10 @@ class BoxPairPredictor(nn.Module):
             nn.ReLU(),
             nn.Linear(representation_size, num_classes)
         )
-    def forward(self, x, prior):
-        return torch.sigmoid(self.predictor(x)) * prior
+    def forward(self, x):
+        return self.predictor(x)
 
-class InteractGraphNet(models.GenericHOINetwork):
+class InteractGraphNet(GenericHOINetwork):
     def __init__(self,
             object_to_action, human_idx,
             # Backbone parameters
@@ -273,6 +106,7 @@ class InteractGraphNet(models.GenericHOINetwork):
             # Transformation parameters
             min_size=800, max_size=1333,
             image_mean=None, image_std=None,
+            postprocess=True,
             # Preprocessing parameters
             box_nms_thresh=0.5,
             max_human=10,
@@ -306,7 +140,7 @@ class InteractGraphNet(models.GenericHOINetwork):
             num_classes=num_classes
         )
 
-        interaction_head = models.InteractionHead(
+        interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
             box_pair_head=box_pair_head,
             box_pair_predictor=box_pair_predictor,
@@ -321,10 +155,10 @@ class InteractGraphNet(models.GenericHOINetwork):
             image_mean = [0.485, 0.456, 0.406]
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
-        transform = models.HOINetworkTransform(min_size, max_size,
+        transform = HOINetworkTransform(min_size, max_size,
             image_mean, image_std)
 
-        super().__init__(backbone, interaction_head, transform)
+        super().__init__(backbone, interaction_head, transform, postprocess)
 
     def state_dict(self):
         """Override method to only return state dict of the interaction head"""
