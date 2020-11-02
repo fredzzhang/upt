@@ -22,14 +22,14 @@ def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
     Arguments:
         boxes_1[List[Tensor[M, 4]]]
         boxes_1[List[Tensor[M, 4]]]
-        shapes(List[Tuple[width, height]])
+        shapes(List[Tuple[height, width]])
         eps(float): A constant used for numerical stability
     Returns:
         Tensor[N, 36]
     """
     features = []
     for b1, b2, shape in zip(boxes_1, boxes_2, shapes):
-        w, h = shape
+        h, w = shape
 
         c1_x = (b1[:, 0] + b1[:, 2]) / 2; c1_y = (b1[:, 1] + b1[:, 3]) / 2
         c2_x = (b2[:, 0] + b2[:, 2]) / 2; c2_y = (b2[:, 1] + b2[:, 3]) / 2
