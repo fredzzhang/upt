@@ -448,7 +448,6 @@ class InteractGraph(nn.Module):
             # The prior score is the product between edge weights and the
             # pre-computed object detection scores with LIS
             all_prior.append(
-                adjacency_matrix[x_keep, y_keep, None] *
                 self.compute_prior_scores(x_keep, y_keep, scores, labels)
             )
 
