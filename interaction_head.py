@@ -8,6 +8,7 @@ Australian Centre for Robotic Vision
 """
 
 import torch
+import torch.nn.functional as F
 import torchvision.ops.boxes as box_ops
 
 from torch import nn
@@ -287,31 +288,15 @@ class InteractGraph(nn.Module):
             nn.ReLU(),
             nn.Linear(representation_size, int(representation_size/2)),
             nn.ReLU(),
-            nn.Linear(int(representation_size/2), 1),
-            nn.Sigmoid()
+            nn.Linear(int(representation_size/2), 1)
         )
 
         # Compute messages
-        self.sub_to_obj = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
-        self.obj_to_sub = nn.Sequential(
-            nn.Linear(node_encoding_size, representation_size),
-            nn.ReLU()
-        )
+        self.sub_to_obj = nn.Linear(node_encoding_size, representation_size)
+        self.obj_to_sub = nn.Linear(node_encoding_size, representation_size)
 
-        # Update node hidden states
-        self.sub_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
-        )
-        self.obj_update = nn.Linear(
-            node_encoding_size + representation_size,
-            node_encoding_size,
-            bias=False
-        )
+        self.norm_h = nn.LayerNorm(node_encoding_size)
+        self.norm_o = nn.LayerNorm(node_encoding_size)
 
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
         """
@@ -432,16 +417,22 @@ class InteractGraph(nn.Module):
                 adjacency_matrix = weights.reshape(n_h, n)
 
                 # Update human nodes
-                h_node_encodings = self.sub_update(torch.cat([
-                    h_node_encodings,
-                    torch.mm(adjacency_matrix, self.obj_to_sub(node_encodings))
-                ], 1))
+                messages_to_h = F.relu(torch.mm(
+                    adjacency_matrix.softmax(dim=1),
+                    self.obj_to_sub(node_encodings)
+                ))
+                h_node_encodings = self.norm_h(
+                    h_node_encodings + messages_to_h
+                )
 
                 # Update object nodes (including human nodes)
-                node_encodings = self.obj_update(torch.cat([
-                    node_encodings,
-                    torch.mm(adjacency_matrix.t(), self.sub_to_obj(h_node_encodings))
-                ], 1))
+                messages_to_o = F.relu(torch.mm(
+                    adjacency_matrix.t().softmax(dim=1),
+                    self.sub_to_obj(h_node_encodings)
+                ))
+                node_encodings = self.norm_o(
+                    node_encodings + messages_to_o
+                )
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
