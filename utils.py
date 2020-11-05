@@ -109,6 +109,7 @@ def test(net, test_loader):
 
             box_idx = result['index']
             _, num = torch.unique(box_idx, return_counts=True)
+            num = num.tolist()
             # Reformat the predicted classes and scores
             # TARGET_CLASS: [SCORE, BINARY_LABELS]
             predictions = [{

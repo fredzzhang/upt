@@ -34,7 +34,7 @@ def main(args):
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
             os.path.join(args.data_root,
-            "fasterrcnn_resnet50_fpn_detections/{}".format(args.parition)),
+            "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)),
             human_idx=49
         ), collate_fn=custom_collate, batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True
