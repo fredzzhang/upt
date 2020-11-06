@@ -14,7 +14,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-from ops import LIS
+from ops import LIS, compute_spatial_encodings
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
@@ -248,6 +248,17 @@ class InteractionHead(nn.Module):
 
         return results
 
+class AttentionHead(nn.Module):
+    def __init__(self, appearance_size, spatial_size, representation_size):
+        super().__init__()
+        self.fc_1 = nn.Linear(appearance_size, representation_size)
+        self.fc_2 = nn.Linear(spatial_size, representation_size)
+        self.fc_3 = nn.Linear(representation_size, representation_size)
+    def forward(self, appearance, spatial):
+        return F.relu(self.fc_3(
+            F.relu(self.fc_1(appearance) * self.fc_2(spatial))
+        ))
+
 class InteractGraph(nn.Module):
     def __init__(self,
                 out_channels,
@@ -297,6 +308,22 @@ class InteractGraph(nn.Module):
 
         self.norm_h = nn.LayerNorm(node_encoding_size)
         self.norm_o = nn.LayerNorm(node_encoding_size)
+
+        # Map spatial encodings to the same dimension as appearance features
+        self.spatial_head = nn.Sequential(
+            nn.Linear(36, 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+        )
+
+        # Spatial attention head
+        self.attention_head = AttentionHead(
+            node_encoding_size * 2,
+            1024, representation_size
+        )
 
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
         """
@@ -407,6 +434,12 @@ class InteractGraph(nn.Module):
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
 
+            # Compute spatial features
+            box_pair_spatial = compute_spatial_encodings(
+                [coords[x_keep]], [coords[y_keep]], [image_shapes[b_idx]]
+            )
+            box_pair_spatial = self.spatial_head(box_pair_spatial)
+
             adjacency_matrix = torch.ones(n_h, n, device=device)
             for i in range(self.num_iter):
                 # Compute weights of each edge
@@ -439,9 +472,13 @@ class InteractGraph(nn.Module):
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
                 
-            all_box_pair_features.append(torch.cat([
-                h_node_encodings[x_keep], node_encodings[y_keep]
-            ], 1))
+            all_box_pair_features.append(self.attention_head(
+                torch.cat([
+                    h_node_encodings[x_keep],
+                    node_encodings[y_keep]
+                    ], 1),
+                box_pair_spatial
+            ))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
