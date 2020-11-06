@@ -258,6 +258,37 @@ class AttentionHead(nn.Module):
         return F.relu(self.fc_3(
             F.relu(self.fc_1(appearance) * self.fc_2(spatial))
         ))
+class MessageAttentionHead(nn.Module):
+    def __init__(self, appearance_size, spatial_size, representation_size, node_type):
+        super().__init__()
+        self.fc_1 = nn.Linear(appearance_size, representation_size)
+        self.fc_2 = nn.Linear(spatial_size, representation_size)
+        self.fc_3 = nn.Linear(representation_size, representation_size)
+        if node_type == 'human':
+            self._forward_method = self._forward_human_nodes
+        elif node_type == 'object':
+            self._forward_method = self._forward_object_nodes
+        else:
+            raise ValueError("Unknown node type \"{}\"".format(node_type))
+
+    def _forward_human_nodes(self, appearance, spatial):
+        num_hum, num_obj = spatial.shape[:2]
+        assert len(appearance) == num_hum, "Incorrect size of dim0 for appearance features"
+        return self.fc_3(F.relu(
+            self.fc_1(appearance).repeat(num_obj, 1, 1)
+            * self.fc_2(spatial).permute([1, 0, 2])
+        ))
+    def _forward_object_nodes(self, appearance, spatial):
+        num_hum, num_obj = spatial.shape[:2]
+        assert len(appearance) == num_obj, "Incorrect size of dim0 for appearance features"
+        return self.fc_3(F.relu(
+            self.fc_1(appearance).repeat(num_hum, 1, 1)
+            * self.fc_2(spatial)
+        ))
+
+    def forward(self, *args):
+        return self._forward_method(*args)
+
 
 class InteractGraph(nn.Module):
     def __init__(self,
@@ -297,8 +328,14 @@ class InteractGraph(nn.Module):
         self.adjacency = nn.Linear(representation_size, 1)
 
         # Compute messages
-        self.sub_to_obj = nn.Linear(node_encoding_size, representation_size)
-        self.obj_to_sub = nn.Linear(node_encoding_size, representation_size)
+        self.sub_to_obj = MessageAttentionHead(
+            node_encoding_size, 1024,
+            representation_size, node_type='human'
+        )
+        self.obj_to_sub = MessageAttentionHead(
+            node_encoding_size, 1024,
+            representation_size, node_type='object'
+        )
 
         self.norm_h = nn.LayerNorm(node_encoding_size)
         self.norm_o = nn.LayerNorm(node_encoding_size)
@@ -449,19 +486,25 @@ class InteractGraph(nn.Module):
                 adjacency_matrix = self.adjacency(weights).reshape(n_h, n)
 
                 # Update human nodes
-                messages_to_h = F.relu(torch.mm(
-                    adjacency_matrix.softmax(dim=1),
-                    self.obj_to_sub(node_encodings)
-                ))
+                messages_to_h = F.relu(torch.sum(
+                    adjacency_matrix.softmax(dim=1) *
+                    self.obj_to_sub(
+                        node_encodings,
+                        box_pair_spatial_reshaped
+                    ), dim=1)
+                )
                 h_node_encodings = self.norm_h(
                     h_node_encodings + messages_to_h
                 )
 
                 # Update object nodes (including human nodes)
-                messages_to_o = F.relu(torch.mm(
-                    adjacency_matrix.t().softmax(dim=1),
-                    self.sub_to_obj(h_node_encodings)
-                ))
+                messages_to_o = F.relu(torch.sum(
+                    adjacency_matrix.t().softmax(dim=1) *
+                    self.sub_to_obj(
+                        h_node_encodings,
+                        box_pair_spatial_reshaped
+                    ), dim=1)
+                )
                 node_encodings = self.norm_o(
                     node_encodings + messages_to_o
                 )
