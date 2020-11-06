@@ -434,7 +434,7 @@ class InteractGraph(nn.Module):
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
-            box_pair_spatial = box_pair_spatial.reshape(n_h, n, -1)
+            box_pair_spatial_reshaped = box_pair_spatial.reshape(n_h, n, -1)
 
             adjacency_matrix = torch.ones(n_h, n, device=device)
             for i in range(self.num_iter):
@@ -444,7 +444,7 @@ class InteractGraph(nn.Module):
                         h_node_encodings[x],
                         node_encodings[y]
                     ], 1),
-                    box_pair_spatial[x, y]
+                    box_pair_spatial
                 )
                 adjacency_matrix = self.adjacency(weights).reshape(n_h, n)
 
@@ -476,7 +476,7 @@ class InteractGraph(nn.Module):
                     h_node_encodings[x_keep],
                     node_encodings[y_keep]
                     ], 1),
-                box_pair_spatial[x_keep, y_keep]
+                box_pair_spatial_reshaped[x_keep, y_keep]
             ))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
