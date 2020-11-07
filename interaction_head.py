@@ -487,7 +487,7 @@ class InteractGraph(nn.Module):
 
                 # Update human nodes
                 messages_to_h = F.relu(torch.sum(
-                    adjacency_matrix.softmax(dim=1) *
+                    adjacency_matrix.softmax(dim=1)[..., None] *
                     self.obj_to_sub(
                         node_encodings,
                         box_pair_spatial_reshaped
@@ -499,7 +499,7 @@ class InteractGraph(nn.Module):
 
                 # Update object nodes (including human nodes)
                 messages_to_o = F.relu(torch.sum(
-                    adjacency_matrix.t().softmax(dim=1) *
+                    adjacency_matrix.t().softmax(dim=1)[..., None] *
                     self.sub_to_obj(
                         h_node_encodings,
                         box_pair_spatial_reshaped
