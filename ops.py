@@ -66,3 +66,30 @@ def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
             torch.cat([f, torch.log(f + eps)], 1)
         )
     return torch.cat(features)
+
+def binary_focal_loss(x, y, alpha=0.25, gamma=2.0, reduction='mean'):
+    """
+    Focal loss by Lin et al.
+    https://arxiv.org/pdf/1708.02002.pdf
+
+    L = - alpha * |y-x|^{gamma} * log(|y-x|)
+
+    Arguments:
+        x(Tensor[N, K]): Post-normalisation scores
+        y(Tensor[N, K]): Binary labels
+        alpha(float): Hyper parameter
+        gamma(float): Hyper paramter
+        reduction(str): Reduction methods
+    """
+    loss = alpha * (y-x).abs() ** gamma * \
+        torch.nn.functional.binary_cross_entropy(
+            x, y, reduction='none'
+        )
+    if reduction == 'mean':
+        return loss.mean()
+    elif reduction == 'sum':
+        return loss.sum()
+    elif reduction == 'none':
+        return loss
+    else:
+        raise ValueError("Unsupported reduction method {}".format(reduction))
