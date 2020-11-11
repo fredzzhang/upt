@@ -134,7 +134,7 @@ class InteractionHead(nn.Module):
             labels.append(result['labels'])
 
         labels = torch.cat(labels)
-        n_p = len(torch.nonzero(labels).squeeze())
+        n_p = len(torch.nonzero(labels))
         if n_p == 0:
             n_p = 1
         loss = binary_focal_loss(
