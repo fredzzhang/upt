@@ -14,7 +14,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-from ops import LIS, compute_spatial_encodings
+from ops import LIS, compute_spatial_encodings, binary_focal_loss
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
@@ -133,9 +133,14 @@ class InteractionHead(nn.Module):
             scores.append(result['scores'])
             labels.append(result['labels'])
 
-        return nn.functional.binary_cross_entropy(
-            torch.cat(scores), torch.cat(labels)
+        labels = torch.cat(labels)
+        n_p = len(torch.nonzero(labels))
+        if n_p == 0:
+            n_p = 1
+        loss = binary_focal_loss(
+            torch.cat(scores), labels, reduction='sum', gamma=0.5
         )
+        return loss / n_p
 
     def postprocess(self, logits, prior, boxes_h, boxes_o, object_class, labels):
         """
