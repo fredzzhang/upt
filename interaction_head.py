@@ -383,6 +383,13 @@ class InteractGraph(nn.Module):
             cardinality=16
         )
 
+        self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
+        # Attention head for global features
+        self.attention_head_g = AttentionHead(
+            256, 1024,
+            representation_size, cardinality=16
+        )
+
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
         """
         Arguements:
@@ -455,6 +462,7 @@ class InteractGraph(nn.Module):
         if self.training:
             assert targets is not None, "Targets should be passed during training"
 
+        global_features = self.avg_pool(features[3]).flatten(start_dim=1)
         box_features = self.box_head(box_features)
 
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
@@ -541,13 +549,17 @@ class InteractGraph(nn.Module):
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
                 
-            all_box_pair_features.append(self.attention_head(
-                torch.cat([
-                    h_node_encodings[x_keep],
-                    node_encodings[y_keep]
-                    ], 1),
-                box_pair_spatial_reshaped[x_keep, y_keep]
-            ))
+            all_box_pair_features.append(torch.cat([
+                self.attention_head(
+                    torch.cat([
+                        h_node_encodings[x_keep],
+                        node_encodings[y_keep]
+                        ], 1),
+                    box_pair_spatial_reshaped[x_keep, y_keep]
+                ), self.attention_head_g(
+                    global_features[b_idx, None],
+                    box_pair_spatial_reshaped[x_keep, y_keep])
+            ], dim=1))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
