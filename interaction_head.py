@@ -138,7 +138,7 @@ class InteractionHead(nn.Module):
         if n_p == 0:
             n_p = 1
         loss = binary_focal_loss(
-            torch.cat(scores), labels, reduction='sum'
+            torch.cat(scores), labels, reduction='sum', gamma=0.5
         )
         return loss / n_p
 
