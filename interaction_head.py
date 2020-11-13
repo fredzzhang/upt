@@ -254,21 +254,37 @@ class InteractionHead(nn.Module):
         return results
 
 class AttentionHead(nn.Module):
-    def __init__(self, appearance_size, spatial_size, representation_size):
+    def __init__(self, appearance_size, spatial_size, representation_size, cardinality):
         super().__init__()
-        self.fc_1 = nn.Linear(appearance_size, representation_size)
-        self.fc_2 = nn.Linear(spatial_size, representation_size)
-        self.fc_3 = nn.Linear(representation_size, representation_size)
+        self.cardinality = cardinality
+
+        sub_repr_size = int(representation_size / cardinality)
+        assert sub_repr_size * cardinality == representation_size, \
+            "The given representation size should be divisible by cardinality"
+
+        self.fc_1 = nn.ModuleList([
+            nn.Linear(appearance_size, sub_repr_size)
+            for _ in range(cardinality)
+        ])
+        self.fc_2 = nn.ModuleList([
+            nn.Linear(spatial_size, sub_repr_size)
+            for _ in range(cardinality)
+        ])
+        self.fc_3 = nn.ModuleList([
+            nn.Linear(sub_repr_size, representation_size)
+            for _ in range(cardinality)
+        ])
     def forward(self, appearance, spatial):
-        return F.relu(self.fc_3(
-            F.relu(self.fc_1(appearance) * self.fc_2(spatial))
-        ))
-class MessageAttentionHead(nn.Module):
-    def __init__(self, appearance_size, spatial_size, representation_size, node_type):
-        super().__init__()
-        self.fc_1 = nn.Linear(appearance_size, representation_size)
-        self.fc_2 = nn.Linear(spatial_size, representation_size)
-        self.fc_3 = nn.Linear(representation_size, representation_size)
+        return F.relu(torch.stack([
+            fc_3(F.relu(fc_1(appearance) * fc_2(spatial)))
+            for fc_1, fc_2, fc_3
+            in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0))
+
+class MessageAttentionHead(AttentionHead):
+    def __init__(self, appearance_size, spatial_size, representation_size, node_type, cardinality):
+        super().__init__(appearance_size, spatial_size, representation_size, cardinality)
+
         if node_type == 'human':
             self._forward_method = self._forward_human_nodes
         elif node_type == 'object':
@@ -277,23 +293,26 @@ class MessageAttentionHead(nn.Module):
             raise ValueError("Unknown node type \"{}\"".format(node_type))
 
     def _forward_human_nodes(self, appearance, spatial):
-        num_hum, num_obj = spatial.shape[:2]
-        assert len(appearance) == num_hum, "Incorrect size of dim0 for appearance features"
-        return self.fc_3(F.relu(
-            self.fc_1(appearance).repeat(num_obj, 1, 1)
-            * self.fc_2(spatial).permute([1, 0, 2])
-        ))
+        n_h, n = spatial.shape[:2]
+        assert len(appearance) == n_h, "Incorrect size of dim0 for appearance features"
+        return torch.stack([
+            fc_3(F.relu(
+                fc_1(appearance).repeat(n, 1, 1)
+                * fc_2(spatial).permute([1, 0, 2])
+            )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0)
     def _forward_object_nodes(self, appearance, spatial):
-        num_hum, num_obj = spatial.shape[:2]
-        assert len(appearance) == num_obj, "Incorrect size of dim0 for appearance features"
-        return self.fc_3(F.relu(
-            self.fc_1(appearance).repeat(num_hum, 1, 1)
-            * self.fc_2(spatial)
-        ))
+        n_h, n = spatial.shape[:2]
+        assert len(appearance) == n, "Incorrect size of dim0 for appearance features"
+        return torch.stack([
+            fc_3(F.relu(
+                fc_1(appearance).repeat(n_h, 1, 1)
+                * fc_2(spatial)
+            )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0)
 
     def forward(self, *args):
         return self._forward_method(*args)
-
 
 class InteractGraph(nn.Module):
     def __init__(self,
@@ -335,11 +354,13 @@ class InteractGraph(nn.Module):
         # Compute messages
         self.sub_to_obj = MessageAttentionHead(
             node_encoding_size, 1024,
-            representation_size, node_type='human'
+            representation_size, node_type='human',
+            cardinality=16
         )
         self.obj_to_sub = MessageAttentionHead(
             node_encoding_size, 1024,
-            representation_size, node_type='object'
+            representation_size, node_type='object',
+            cardinality=16
         )
 
         self.norm_h = nn.LayerNorm(node_encoding_size)
@@ -358,7 +379,8 @@ class InteractGraph(nn.Module):
         # Spatial attention head
         self.attention_head = AttentionHead(
             node_encoding_size * 2,
-            1024, representation_size
+            1024, representation_size,
+            cardinality=16
         )
 
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
