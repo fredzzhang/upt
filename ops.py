@@ -67,7 +67,7 @@ def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
         )
     return torch.cat(features)
 
-def binary_focal_loss(x, y, alpha=0.5, gamma=2.0, reduction='mean'):
+def binary_focal_loss(x, y, alpha=0.5, gamma=2.0, reduction='mean', eps=1e-6):
     """
     Focal loss by Lin et al.
     https://arxiv.org/pdf/1708.02002.pdf
@@ -80,8 +80,9 @@ def binary_focal_loss(x, y, alpha=0.5, gamma=2.0, reduction='mean'):
         alpha(float): Hyper parameter
         gamma(float): Hyper paramter
         reduction(str): Reduction methods
+        eps(float): A small constant to avoid NaN values from 'PowBackward'
     """
-    loss = (1 - y - alpha).abs() * (y-x).abs() ** gamma * \
+    loss = (1 - y - alpha).abs() * ((y-x).abs() + eps) ** gamma * \
         torch.nn.functional.binary_cross_entropy(
             x, y, reduction='none'
         )
