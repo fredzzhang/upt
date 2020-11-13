@@ -134,7 +134,7 @@ class InteractGraphNet(GenericHOINetwork):
             num_iter=num_iterations
         )
 
-        box_pair_predictor = nn.Linear(representation_size, num_classes)
+        box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
