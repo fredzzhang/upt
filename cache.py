@@ -74,10 +74,16 @@ def inference(net, dataloader, coco2hico, cache_dir):
             ], dim=1).numpy()
             n += cls_num
 
+    # Replace None with size (0,0) arrays
+    for i in range(600):
+        for j in range(9658):
+            if all_results[i, j] is None:
+                all_results[i, j] = np.zeros((0, 0))
+    # Cache results
     for object_idx in coco2hico:
         interaction_idx = object2int[coco2hico[object_idx]]
         sio.savemat(
-            os.path.join(cache_dir, 'detections_{:02d}.mat'.format(object_idx)),
+            os.path.join(cache_dir, 'detections_{}.mat'.format(object_idx.zfill(2))),
             dict(all_boxes=all_results[interaction_idx])
         )
 
@@ -102,8 +108,10 @@ def main(args):
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
             os.path.join(args.data_root,
-            "fasterrcnn_resnet50_fpn_detections/{}".format(args.parition)),
-            human_idx=49
+            "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)),
+            human_idx=49,
+            box_score_thresh_h=args.human_thresh,
+            box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=1,
         num_workers=args.num_workers, pin_memory=True
     )
@@ -124,10 +132,12 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
     parser.add_argument('--data-root', required=True, type=str)
-    parser.add_argument('--cache-dir', defualt='matcache', type=str)
+    parser.add_argument('--cache-dir', default='matcache', type=str)
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=3, type=int,
                         help="Number of iterations to run message passing")
+    parser.add_argument('--human-thresh', default=0.5, type=float)
+    parser.add_argument('--object-thresh', default=0.5, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
     
