@@ -23,6 +23,11 @@ def main(args):
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
 
+    num_anno = torch.tensor(HICODet(None, annoFile=os.path.join(
+        args.data_root, 'instances_train2015.json')).anno_interaction)
+    rare = torch.nonzero(num_anno < 10).squeeze(1)
+    non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
+
     dataset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/{}".format(args.partition)),
@@ -56,8 +61,10 @@ def main(args):
     
     with timer:
         test_ap = test(net, dataloader)
-    print("Epoch: {} | test mAP: {:.4f}, total time: {:.2f}s".format(
-        epoch, test_ap.mean(), timer[0]
+    print("Model at epoch: {} | time elapsed: {:.2f}s\n"
+        "Full: {:.4f}, rare: {:.4f}, non-rare: {:.4f}".format(
+        epoch, timer[0], test_ap.mean(),
+        test_ap[rare].mean(), test_ap[non_rare].mean()
     ))
 
 if __name__ == "__main__":
