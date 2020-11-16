@@ -36,7 +36,7 @@ def plot_pr_curve(scores, labels, num_gt, cache_dir):
     prec, rec = pocket.utils.DetectionAPMeter.compute_pr_for_each(
         scores, labels, num_gt)
     ap = pocket.utils.AveragePrecisionMeter.compute_per_class_ap_with_11_point_interpolation(
-        (prec, rec)
+        (prec.float(), rec.float())
     )
 
     plt.plot(rec.numpy(), prec.numpy())
@@ -136,12 +136,17 @@ if __name__ == "__main__":
                     counter += n
                     continue
                 gt_idx = np.where(np.asarray(gt["hoi"]) == hoi_idx)[0]
-                gt_bh = np.asarray(gt["boxes_h"])[gt_idx]; gt_bo = np.asarray(gt["boxes_o"])[gt_idx]
+                gt_bh = np.asarray(gt["boxes_h"])[gt_idx]
+                gt_bo = np.asarray(gt["boxes_o"])[gt_idx]
                 # Match detections with ground truth
                 match = torch.min(
-                    box_iou(torch.from_numpy(gt_bh), torch.as_tensor(boxes_in_image[:, :4])),
-                    box_iou(torch.from_numpy(gt_bo), torch.as_tensor(boxes_in_image[:, 4:8]))
-                ) > MIN_IOU
+                    box_iou(
+                        torch.from_numpy(gt_bh).float(),
+                        torch.as_tensor(boxes_in_image[:, :4])),
+                    box_iou(
+                        torch.from_numpy(gt_bo).float(),
+                        torch.as_tensor(boxes_in_image[:, 4:8])
+                )) > MIN_IOU
 
                 for i, m in enumerate(match):
                     match_idx = torch.nonzero(m).squeeze(1)
