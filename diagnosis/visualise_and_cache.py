@@ -187,6 +187,20 @@ if __name__ == "__main__":
                 canvas = ImageDraw.Draw(image)
                 canvas.rectangle(b1.tolist(), outline="#007CFF", width=2)
                 canvas.rectangle(b2.tolist(), outline="#46FF00", width=2)
+                b_h_centre = (b1[:2]+b1[2:])/2
+                b_o_centre = (b2[:2]+b2[2:])/2
+                canvas.line(
+                    b_h_centre.tolist() + b_o_centre.tolist(),
+                    fill='#FF4444', width=2
+                )
+                canvas.ellipse(
+                    (b_h_centre - 3).tolist() + (b_h_centre + 3).tolist(),
+                    fill='#FF4444'
+                )
+                canvas.ellipse(
+                    (b_o_centre - 3).tolist() + (b_o_centre + 3).tolist(),
+                    fill='#FF4444'
+                )
 
                 # Get ground truth box pairs of the same class
                 target = pocket.ops.to_tensor(target, input_format="dict")
