@@ -71,7 +71,8 @@ def main(args):
             annoFile="instances_train2015.json",
             transform=torchvision.transforms.ToTensor(),
             target_transform=pocket.ops.ToTensor(input_format='dict'))),
-        num_workers=4, collate_fn=collate_fn, shuffle=True
+        num_workers=4, collate_fn=collate_fn,
+        shuffle=True, batch_size=args.batch_size
     )
 
     test_loader = DataLoader(
