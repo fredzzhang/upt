@@ -20,9 +20,9 @@ from pocket.data import HICODet
 
 class DetectorEngine(pocket.core.LearningEngine):
     def __init__(self, net, train_loader, **kwargs):
-        super.__init__(net, None, train_loader, **kwargs)
+        super().__init__(net, None, train_loader, **kwargs)
     def _on_each_iteration(self):
-        self._state.output = self._state.net(*self._state.inputs)
+        self._state.output = self._state.net(*self._state.inputs, targets=self._state.targets)
         self._state.loss = sum(loss for loss in self._state.output.values())
         self._state.optimizer.zero_grad()
         self._state.loss.backward()
@@ -48,7 +48,7 @@ class HICODetObject(Dataset):
             target['object']
         ])
         # Convert HICODet object (80) indices to COCO (91) indices
-        converted_labels = torch.tensor([int(self.hico2coco91[i]) for i in labels])
+        converted_labels = torch.tensor([int(self.hico2coco91[i.item()]) for i in labels])
         
         return [image], [dict(boxes=boxes, labels=converted_labels)]
 
