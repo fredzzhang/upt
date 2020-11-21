@@ -156,8 +156,10 @@ def test(net, test_loader):
     return ap_test.eval()
 
 class CustomisedEngine(DistributedLearningEngine):
-    def __init__(self, net, train_loader, **kwargs):
+    def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
         super().__init__(net, None, train_loader, **kwargs)
+        self.val_loader = val_loader
+        self.num_classes = num_classes
 
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
@@ -167,53 +169,70 @@ class CustomisedEngine(DistributedLearningEngine):
         self._state.loss.backward()
         self._state.optimizer.step()
 
+        self._synchronise_and_log_results(self._state.output, self.ap_train)
+
+    def _on_start_epoch(self):
+        super()._on_start_epoch()
+        if self._rank == 0:
+            self.ap_train = DetectionAPMeter(self.num_classes, algorithm='11P')
+
     def _on_end_epoch(self):
         super()._on_end_epoch()
+        timer = HandyTimer(maxlen=2)
+        # Compute training mAP
+        if self._rank == 0:
+            with timer:
+                ap_train = self.ap_train.eval()
+        # Run validation and compute mAP
+        with timer:
+            ap_val = self.validate()
         # Print time
         if self._rank == 0:
-            print("Epoch: {} finished at (+{:.2f}s)".format(
-                    self._state.epoch, time.time() - self._dawn
-                ))
+            print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
+                "validation mAP: {:.4f}, total time: {:.2f}s".format(
+                    self._state.epoch, ap_train.mean().item(), timer[0],
+                    ap_val.mean().item(), timer[1]
+            ))
 
-    # def _synchronise_and_log_results(self, output, meter):
-    #     scores = []; pred = []; labels = []
-    #     # Collate results within the batch
-    #     for result in output:
-    #         scores.append(torch.cat(result["scores"]).detach().cpu().numpy())
-    #         pred.append(torch.cat(result["labels"]).cpu().float().numpy())
-    #         labels.append(torch.cat(result["gt_labels"]).cpu().numpy())
-    #     # Sync across subprocesses
-    #     all_results = np.stack([
-    #         np.concatenate(scores),
-    #         np.concatenate(pred),
-    #         np.concatenate(labels)
-    #     ])
-    #     all_results_sync = all_gather(all_results)
-    #     # Collate and log results in master process
-    #     if self._rank == 0:
-    #         scores, pred, labels = torch.from_numpy(
-    #             np.concatenate(all_results_sync, axis=1)
-    #         ).unbind(0)
-    #         meter.append(scores, pred, labels)
+    def _synchronise_and_log_results(self, output, meter):
+        scores = []; pred = []; labels = []
+        # Collate results within the batch
+        for result in output:
+            scores.append(torch.cat(result['scores']).detach().cpu().numpy())
+            pred.append(torch.cat(result['predictions']).cpu().float().numpy())
+            labels.append(torch.cat(result["labels"]).cpu().numpy())
+        # Sync across subprocesses
+        all_results = np.stack([
+            np.concatenate(scores),
+            np.concatenate(pred),
+            np.concatenate(labels)
+        ])
+        all_results_sync = all_gather(all_results)
+        # Collate and log results in master process
+        if self._rank == 0:
+            scores, pred, labels = torch.from_numpy(
+                np.concatenate(all_results_sync, axis=1)
+            ).unbind(0)
+            meter.append(scores, pred, labels)
 
-    # def test(self, min_iou=0.5):
-    #     """Test the network and return classification mAP"""
-    #     # Instantiate the AP meter in the master process
-    #     if self._rank == 0:
-    #         ap_test = DetectionAPMeter(self.num_classes, algorithm="INT")
+    @torch.no_grad()
+    def validate(self):
+        """Test the network and return classification mAP"""
+        # Instantiate the AP meter in the master process
+        if self._rank == 0:
+            ap_val = DetectionAPMeter(self.num_classes, algorithm='11P')
         
-    #     self._state.net.eval()
-    #     for batch in self.test_loader:
-    #         inputs = pocket.ops.relocate_to_cuda(batch)
-    #         with torch.no_grad():
-    #             results = self._state.net(*inputs)
-    #         if results is None:
-    #             continue
+        self._state.net.eval()
+        for batch in self.val_loader:
+            inputs = pocket.ops.relocate_to_cuda(batch)
+            results = self._state.net(*inputs)
+            if results is None:
+                continue
 
-    #         self._synchronise_and_log_results(results, ap_test)
+            self._synchronise_and_log_results(results, ap_val)
 
-    #     # Evaluate mAP in master process
-    #     if self._rank == 0:
-    #         return ap_test.eval()
-    #     else:
-    #         return None
+        # Evaluate mAP in master process
+        if self._rank == 0:
+            return ap_val.eval()
+        else:
+            return None
