@@ -1,3 +1,12 @@
+"""
+Train and validate with distributed data parallel
+
+Fred Zhang <frederic.zhang@anu.edu.au>
+
+The Australian National University
+Australian Centre for Robotic Vision
+"""
+
 import os
 import torch
 import argparse
@@ -44,7 +53,8 @@ def main(rank, args):
 
     net = InteractGraphNet(
         trainset.object_to_verb, 49,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        postprocess=False
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
@@ -60,11 +70,27 @@ def main(rank, args):
             dataset=CustomisedDataset(trainset, 
                 os.path.join(args.data_root,
                 "fasterrcnn_resnet50_fpn_detections/train2015"),
-                human_idx=49
+                human_idx=49, 
+                box_score_thresh_h=args.human_thresh,
+                box_score_thresh_o=args.object_thresh
             ), collate_fn=custom_collate, batch_size=args.batch_size,
             num_workers=args.num_workers, pin_memory=True,
             sampler=DistributedSampler(
                 trainset, 
+                num_replicas=args.world_size, 
+                rank=rank)
+        ),
+        DataLoader(
+            dataset=CustomisedDataset(testset, 
+                os.path.join(args.data_root,
+                "fasterrcnn_resnet50_fpn_detections/test2015"),
+                human_idx=49,
+                box_score_thresh_h=args.human_thresh,
+                box_score_thresh_o=args.object_thresh
+            ), collate_fn=custom_collate, batch_size=args.batch_size,
+            num_workers=args.num_workers, pin_memory=True,
+            sampler=DistributedSampler(
+                testset, 
                 num_replicas=args.world_size, 
                 rank=rank)
         ),
@@ -101,6 +127,8 @@ if __name__ == '__main__':
                         help="Batch size for each subprocess")
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
+    parser.add_argument('--human-thresh', default=0.5, type=float)
+    parser.add_argument('--object-thresh', default=0.5, type=float)
     parser.add_argument('--milestones', nargs='+', default=[10, 15],
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=2, type=int)
