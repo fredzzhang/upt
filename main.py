@@ -68,19 +68,6 @@ def main(rank, args):
                 num_replicas=args.world_size, 
                 rank=rank)
         ),
-        DataLoader(
-            dataset=CustomisedDataset(testset,
-                os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/test2015"),
-                human_idx=49
-            ), collate_fn=custom_collate, batch_size=args.batch_size,
-            num_workers=args.num_workers, pin_memory=True,
-            sampler=DistributedSampler(
-                testset,
-                num_replicas=args.world_size,
-                rank=rank)
-        ),
-        num_classes=trainset.num_action_cls,
         optim_params={
             'lr': args.learning_rate,
             'momentum': args.momentum,
