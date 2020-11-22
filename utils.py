@@ -171,10 +171,8 @@ class CustomisedEngine(DistributedLearningEngine):
 
         self._synchronise_and_log_results(self._state.output, self.ap_train)
 
-    def _on_start_epoch(self):
-        super()._on_start_epoch()
-        if self._rank == 0:
-            self.ap_train = DetectionAPMeter(self.num_classes, algorithm='11P')
+    def _on_start(self):
+        self.ap_train = DetectionAPMeter(self.num_classes, algorithm='11P')
 
     def _on_end_epoch(self):
         super()._on_end_epoch()
@@ -186,21 +184,22 @@ class CustomisedEngine(DistributedLearningEngine):
         # Run validation and compute mAP
         with timer:
             ap_val = self.validate()
-        # Print time
+        # Print performance and time
         if self._rank == 0:
             print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
                 "validation mAP: {:.4f}, total time: {:.2f}s".format(
                     self._state.epoch, ap_train.mean().item(), timer[0],
                     ap_val.mean().item(), timer[1]
             ))
+            self.ap_train.reset()
 
     def _synchronise_and_log_results(self, output, meter):
         scores = []; pred = []; labels = []
         # Collate results within the batch
         for result in output:
-            scores.append(torch.cat(result['scores']).detach().cpu().numpy())
-            pred.append(torch.cat(result['predictions']).cpu().float().numpy())
-            labels.append(torch.cat(result["labels"]).cpu().numpy())
+            scores.append(result['scores'].detach().cpu().numpy())
+            pred.append(result['prediction'].cpu().float().numpy())
+            labels.append(result["labels"].cpu().numpy())
         # Sync across subprocesses
         all_results = np.stack([
             np.concatenate(scores),
@@ -218,9 +217,7 @@ class CustomisedEngine(DistributedLearningEngine):
     @torch.no_grad()
     def validate(self):
         """Test the network and return classification mAP"""
-        # Instantiate the AP meter in the master process
-        if self._rank == 0:
-            ap_val = DetectionAPMeter(self.num_classes, algorithm='11P')
+        ap_val = DetectionAPMeter(self.num_classes, algorithm='11P')
         
         self._state.net.eval()
         for batch in self.val_loader:
