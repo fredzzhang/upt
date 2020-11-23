@@ -26,7 +26,6 @@ COCO2HICO = [
     42, 45, 53, 39, 21, 43, 47, 69, 57, 52, 12, 23, 77, 55, 66, 35, 71
 ]
 MIN_IOU = 0.5
-DEBUG = False
 
 def plot_pr_curve(scores, labels, num_gt, cache_dir):
     """Plot the p-r curve for a class"""
@@ -93,6 +92,9 @@ if __name__ == "__main__":
     parser.add_argument("--num-neg",
                         help="Maximum number of negative examples to visualise",
                         default=100, type=int)
+    parser.add_argument("--debug",
+                        help="Only generate results for one class",
+                        action="store_true")
     args = parser.parse_args()
 
     dataset = pocket.data.HICODet(
@@ -101,8 +103,6 @@ if __name__ == "__main__":
     )
 
     fnames = os.listdir(args.dir)
-    # if DEBUG:
-    #     fnames = [fnames[0]]
     for f in fnames:
         obj_idx = COCO2HICO[int(f[11:13]) - 1]
         all_boxes = sio.loadmat(os.path.join(args.dir, f))["all_boxes"]
@@ -165,8 +165,6 @@ if __name__ == "__main__":
                 os.mkdir(example_cache_dir)
 
             plot_pr_curve(scores, labels, dataset.anno_interaction[hoi_idx], cache_dir)
-            if DEBUG:
-                continue
             plot_ranked_scores(scores, labels, cache_dir)
 
             order = scores.argsort()[::-1]
@@ -185,20 +183,20 @@ if __name__ == "__main__":
                 b1 = boxes[k[0]][k[1], :4]; b2 = boxes[k[0]][k[1], 4:8]
 
                 canvas = ImageDraw.Draw(image)
-                canvas.rectangle(b1.tolist(), outline="#007CFF", width=2)
-                canvas.rectangle(b2.tolist(), outline="#46FF00", width=2)
+                canvas.rectangle(b1.tolist(), outline="#007CFF", width=5)
+                canvas.rectangle(b2.tolist(), outline="#46FF00", width=5)
                 b_h_centre = (b1[:2]+b1[2:])/2
                 b_o_centre = (b2[:2]+b2[2:])/2
                 canvas.line(
                     b_h_centre.tolist() + b_o_centre.tolist(),
-                    fill='#FF4444', width=2
+                    fill='#FF4444', width=5
                 )
                 canvas.ellipse(
-                    (b_h_centre - 3).tolist() + (b_h_centre + 3).tolist(),
+                    (b_h_centre - 6).tolist() + (b_h_centre + 6).tolist(),
                     fill='#FF4444'
                 )
                 canvas.ellipse(
-                    (b_o_centre - 3).tolist() + (b_o_centre + 3).tolist(),
+                    (b_o_centre - 6).tolist() + (b_o_centre + 6).tolist(),
                     fill='#FF4444'
                 )
 
@@ -216,11 +214,11 @@ if __name__ == "__main__":
 
                     pocket.utils.draw_dashed_rectangle(
                         image, gt_b1[idx].tolist(),
-                        fill="#007CFF", width=2
+                        fill="#007CFF", width=5
                     )
                     pocket.utils.draw_dashed_rectangle(
                         image, gt_b2[idx].tolist(),
-                        fill="#46FF00", width=2
+                        fill="#46FF00", width=5
                     )
 
                 # The image name is in the following format:
@@ -230,3 +228,5 @@ if __name__ == "__main__":
                     scores[order][j]
                 )
                 image.save(os.path.join(example_cache_dir, cache_name))
+            if args.debug:
+                exit()
