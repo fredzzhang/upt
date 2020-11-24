@@ -17,6 +17,9 @@ from PIL import Image, ImageDraw
 import pocket
 
 def visualise_and_cache(args):
+    if not os.path.exists(args.cache_dir):
+        os.makedirs(args.cache_dir)
+
     dataset = pocket.data.HICODet(
         os.path.join(args.data_root, "hico_20160224_det/images/{}".format(args.partition)),
         os.path.join(args.data_root, "instances_{}.json".format(args.partition))
@@ -32,32 +35,32 @@ def visualise_and_cache(args):
 
     # Load data
     all_boxes = sio.loadmat(os.path.join(args.dir, fname))["all_boxes"]
-    boxes_in_image = all_boxes[intra_idx, dataset._idx[args.image_index]]
+    boxes_in_image = all_boxes[intra_idx, args.image_idx]
 
     boxes_h = boxes_in_image[:, :4]
     boxes_o = boxes_in_image[:, 4:8]
     scores = boxes_in_image[:, -1]
 
-    image, _ = dataset[args.image_index]
+    image = Image.open(os.path.join(dataset._root, dataset._filenames[args.image_idx]))
     # Visualise box pairs
     for bh, bo, s in zip(boxes_h, boxes_o, scores):
         image_ = image.copy()
 
         canvas = ImageDraw.Draw(image_)
-        canvas.rectangle(bh.tolist(), outline="#007CFF", width=5)
-        canvas.rectangle(bo.tolist(), outline="#46FF00", width=5)
+        canvas.rectangle(bh.tolist(), outline="#007CFF", width=10)
+        canvas.rectangle(bo.tolist(), outline="#46FF00", width=10)
         b_h_centre = (bh[:2] + bh[2:]) / 2
         b_o_centre = (bo[:2] + bo[2:]) / 2
         canvas.line(
             b_h_centre.tolist() + b_o_centre.tolist(),
-            fill='#FF4444', width=5
+            fill='#FF4444', width=10
         )
         canvas.ellipse(
-            (b_h_centre - 6).tolist() + (b_h_centre + 6).tolist(),
+            (b_h_centre - 15).tolist() + (b_h_centre + 15).tolist(),
             fill='#FF4444'
         )
         canvas.ellipse(
-            (b_o_centre - 6).tolist() + (b_o_centre + 6).tolist(),
+            (b_o_centre - 15).tolist() + (b_o_centre + 15).tolist(),
             fill='#FF4444'
         )
 
