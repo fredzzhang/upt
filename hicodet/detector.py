@@ -75,15 +75,6 @@ def main(args):
         shuffle=True, batch_size=args.batch_size
     )
 
-    test_loader = DataLoader(
-        dataset=HICODetObject(HICODet(
-            root="hico_20160224_det/images/test2015",
-            annoFile="instances_test2015.json",
-            transform=torchvision.transforms.ToTensor(),
-            target_transform=pocket.ops.ToTensor(input_format='dict'))),
-        num_workers=4, collate_fn=collate_fn
-    )
-
     net = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
     net.cuda()
     
@@ -95,6 +86,11 @@ def main(args):
             lr=args.learning_rate,
             momentum=args.momentum,
             weight_decay=args.weight_decay
+        ),
+        lr_scheduler=True,
+        lr_sched_params=dict(
+            milestones=args.milestones,
+            gamma=args.lr_decay
         )
     )
 
@@ -103,14 +99,15 @@ def main(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Fine-tune Faster R-CNN on HICO-DET")
-    parser.add_argument('--num-epochs', default=10, type=int)
+    parser.add_argument('--num-epochs', default=20, type=int)
     parser.add_argument('--random-seed', default=1, type=int)
-    parser.add_argument('--learning-rate', default=0.001, type=float)
+    parser.add_argument('--learning-rate', default=0.0025, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
-    parser.add_argument('--weight-decay', default=1e-4, type=float)
-    parser.add_argument('--batch-size', default=4, type=int,
-                        help="Batch size for each subprocess")
-    parser.add_argument('--print-interval', default=1000, type=int)
+    parser.add_argument('--weight-decay', default=5e-4, type=float)
+    parser.add_argument('--batch-size', default=2, type=int)
+    parser.add_argument('--milestones', nargs='+', default=[10, 5])
+    parser.add_argument('--lr-decay', default=0.1, type=float)
+    parser.add_argument('--print-interval', default=2000, type=int)
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
 
     args = parser.parse_args()
