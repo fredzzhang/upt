@@ -114,7 +114,7 @@ if __name__ == "__main__":
     
     dataset = HICODet(
         root="./hico_20160224_det/images/{}".format(args.partition),
-        annoFile="./instances_{}.json".format(args.partition),
+        anno_file="./instances_{}.json".format(args.partition),
     )
 
     image_labels = [dataset.annotations[i]["hoi"] for i in dataset._idx]
