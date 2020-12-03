@@ -70,9 +70,19 @@ def visualise(dataset, image_idx, class_idx):
     for b_h, b_o in zip(boxes_h, boxes_o):
         canvas.rectangle(b_h.tolist(), outline='#007CFF', width=2)
         canvas.rectangle(b_o.tolist(), outline='#46FF00', width=2)
-        canvas.line((
-            (b_h[:2]+b_h[2:])/2).tolist() + ((b_o[:2]+b_o[2:])/2).tolist(),
+        b_h_centre = (b_h[:2]+b_h[2:])/2
+        b_o_centre = (b_o[:2]+b_o[2:])/2
+        canvas.line(
+            b_h_centre.tolist() + b_o_centre.tolist(),
             fill='#FF4444', width=2
+        )
+        canvas.ellipse(
+            (b_h_centre - 3).tolist() + (b_h_centre + 3).tolist(),
+            fill='#FF4444'
+        )
+        canvas.ellipse(
+            (b_o_centre - 3).tolist() + (b_o_centre + 3).tolist(),
+            fill='#FF4444'
         )
     image.show()
 
@@ -104,7 +114,7 @@ if __name__ == "__main__":
     
     dataset = HICODet(
         root="./hico_20160224_det/images/{}".format(args.partition),
-        annoFile="./instances_{}.json".format(args.partition),
+        anno_file="./instances_{}.json".format(args.partition),
     )
 
     image_labels = [dataset.annotations[i]["hoi"] for i in dataset._idx]
