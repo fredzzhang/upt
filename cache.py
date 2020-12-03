@@ -100,7 +100,7 @@ def main(args):
     dataset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/{}".format(args.partition)),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_{}.json".format(args.partition)),
         transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')

@@ -23,7 +23,7 @@ def main(args):
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
 
-    num_anno = torch.tensor(HICODet(None, annoFile=os.path.join(
+    num_anno = torch.tensor(HICODet(None, anno_file=os.path.join(
         args.data_root, 'instances_train2015.json')).anno_interaction)
     rare = torch.nonzero(num_anno < 10).squeeze(1)
     non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
@@ -31,7 +31,7 @@ def main(args):
     dataset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/{}".format(args.partition)),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_{}.json".format(args.partition)),
         transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
