@@ -218,7 +218,7 @@ if __name__ == '__main__':
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--batch-size', default=2, type=int)
-    parser.add_argument('--milestones', nargs='+', default=[10, 16])
+    parser.add_argument('--milestones', nargs='+', default=[10, 16], type=int)
     parser.add_argument('--lr-decay', default=0.1, type=float)
     parser.add_argument('--aspect-ratio-group-factor', default=3, type=int)
     parser.add_argument('--print-interval', default=2000, type=int)
