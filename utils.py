@@ -21,7 +21,7 @@ from torchvision.ops.boxes import box_iou
 
 import pocket
 from pocket.core import DistributedLearningEngine
-from pocket.utils import DetectionAPMeter, HandyTimer, all_gather
+from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 
 def custom_collate(batch):
     images = []
@@ -94,6 +94,7 @@ class CustomisedDataset(Dataset):
 
 def test(net, test_loader):
     testset = test_loader.dataset.dataset
+    associate = BoxPairAssociation(min_iou=0.5, encoding='pixel')
 
     ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
     net.eval()
@@ -104,54 +105,37 @@ def test(net, test_loader):
         if output is None:
             continue
 
-        for result, target in zip(output, batch[-1]):
-            result = pocket.ops.relocate_to_cpu(result)
+        # Batch size is fixed as 1 for inference
+        assert len(output) == 1, "Batch size is not 1"
+        output = pocket.ops.relocate_to_cpu(output[0])
+        target = batch[-1][0]
+        # Format detections
+        box_idx = output['index']
+        boxes_h = output['boxes_h'][box_idx]
+        boxes_o = output['boxes_o'][box_idx]
+        objects = output['object'][box_idx]
+        scores = output['scores']
+        verbs = output['prediction']
+        interactions = torch.tensor([
+            testset.object_n_verb_to_interaction[o][v]
+            for o, v in zip(objects, verbs)
+        ])
+        # Associate detected pairs with ground truth pairs
+        labels = torch.zeros_like(scores)
+        unique_hoi = interactions.unique()
+        for hoi_idx in unique_hoi:
+            gt_idx = torch.nonzero(target['hoi'] == hoi_idx).squeeze(1)
+            det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
+            if len(gt_idx):
+                labels[det_idx] = associate(
+                    (target['boxes_h'][gt_idx].view(-1, 4),
+                    target['boxes_o'][gt_idx].view(-1, 4)),
+                    (boxes_h[det_idx].view(-1, 4),
+                    boxes_o[det_idx].view(-1, 4)),
+                    scores[det_idx].view(-1)
+                )
 
-            box_idx = result['index']
-            _, num = torch.unique(box_idx, return_counts=True)
-            num = num.tolist()
-            # Reformat the predicted classes and scores
-            # TARGET_CLASS: [SCORE, BINARY_LABELS]
-            predictions = [{
-                testset.object_n_verb_to_interaction[o][v]:[s.item(), 0]
-                for v, s in zip(verbs, scores)
-                } for verbs, scores, o in zip(
-                    result['prediction'].split(num),
-                    result['scores'].split(num),
-                    result['object']
-            )]
-            # Compute minimum IoU
-            match = torch.min(
-                box_iou(target['boxes_h'], result['boxes_h']),
-                box_iou(target['boxes_o'], result['boxes_o'])
-            ) >= 0.5
-
-            # Associate detected box pairs with ground truth
-            for i, m in enumerate(match):
-                target_class = target["hoi"][i].item()
-                # For each ground truth box pair, find the
-                # detections with sufficient IoU
-                det_idx = m.nonzero().squeeze(1)
-                if len(det_idx) == 0:
-                    continue
-                # Retrieve the scores of matched detections
-                # When target class was not predicted, fill the score as -1
-                match_scores = torch.as_tensor([p[target_class][0]
-                    if target_class in p else -1 for p in predictions])
-                match_idx = match_scores.argmax()
-                # None of matched detections have predicted target class
-                if match_scores[match_idx] == -1:
-                    continue
-                predictions[match_idx][target_class][1] = 1
-
-            pred = torch.cat([
-                torch.Tensor(list(p.keys())) for p in predictions
-            ])
-            scores, labels = torch.cat([
-                torch.Tensor(list(p.values())) for p in predictions
-            ]).unbind(1)
-
-            ap_test.append(scores, pred, labels)
+        ap_test.append(scores, interactions, labels)
 
     return ap_test.eval()
 
