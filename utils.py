@@ -128,8 +128,9 @@ def test(net, test_loader):
             det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
             if len(gt_idx):
                 labels[det_idx] = associate(
-                    (target['boxes_h'][gt_idx].view(-1, 4),
-                    target['boxes_o'][gt_idx].view(-1, 4)),
+                    # Convert ground truth boxes to zero-based index
+                    (target['boxes_h'][gt_idx].view(-1, 4) -1 ,
+                    target['boxes_o'][gt_idx].view(-1, 4) -1),
                     (boxes_h[det_idx].view(-1, 4),
                     boxes_o[det_idx].view(-1, 4)),
                     scores[det_idx].view(-1)
