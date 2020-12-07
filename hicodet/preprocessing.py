@@ -28,7 +28,7 @@ def main(args):
 
     dataset = HICODet(
             root='./hico_20160224_det/images/' + args.partition,
-            annoFile='./instances_{}.json'.format(args.partition)
+            anno_file='./instances_{}.json'.format(args.partition)
             )
 
     t = torchvision.transforms.ToTensor()

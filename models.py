@@ -109,8 +109,8 @@ class InteractGraphNet(GenericHOINetwork):
             postprocess=True,
             # Preprocessing parameters
             box_nms_thresh=0.5,
-            max_human=10,
-            max_object=10
+            max_human=15,
+            max_object=15
             ):
 
         backbone = models.fasterrcnn_resnet_fpn(backbone_name,
