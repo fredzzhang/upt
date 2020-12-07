@@ -35,12 +35,19 @@ def main(args):
             "instances_{}.json".format(args.partition)),
         transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
-    )    
+    )
+    detection_path = os.path.join(
+        args.data_root,
+        "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)
+    )
+    if args.finetune:
+        detection_path += "_finetuned"
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
-            os.path.join(args.data_root,
-            "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)),
-            human_idx=49
+            detection_path,
+            human_idx=49,
+            box_score_thresh_h=args.human_thresh,
+            box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True
     )
@@ -71,9 +78,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
     parser.add_argument('--data-root', required=True, type=str)
     parser.add_argument('--partition', default='test2015', type=str)
-    parser.add_argument('--num-iter', default=1, type=int,
+    parser.add_argument('--finetune', action='store_true',
+                        help="Use detections from fine-tuned detector on HICO-DET")
+    parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--batch-size', default=2, type=int,
+    parser.add_argument('--batch-size', default=1, type=int,
                         help="Batch size for each subprocess")
     parser.add_argument('--human-thresh', default=0.5, type=float)
     parser.add_argument('--object-thresh', default=0.5, type=float)
