@@ -48,6 +48,9 @@ def inference(net, dataloader, coco2hico, cache_dir):
         boxes_h = output['boxes_h'][box_idx]
         boxes_o = output['boxes_o'][box_idx]
         objects = output['object'][box_idx]
+        # Convert box representation to pixel indices
+        boxes_h[:, 2:] -= 1
+        boxes_o[:, 2:] -= 1
 
         scores = output['scores']
         verbs = output['prediction']
