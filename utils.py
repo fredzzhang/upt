@@ -79,6 +79,11 @@ class CustomisedDataset(Dataset):
         image, target = self.dataset[i]
         target['labels'] = target['verb']
 
+        # Convert ground truth boxes to zero-based index and the
+        # representation from pixel indices to coordinates
+        target['boxes_h'][:, :2] -= 1
+        target['boxes_o'][:, :2] -= 1
+
         detection_path = os.path.join(
             self.detection_dir,
             self.dataset.filename(i).replace('jpg', 'json')
@@ -94,7 +99,7 @@ class CustomisedDataset(Dataset):
 
 def test(net, test_loader):
     testset = test_loader.dataset.dataset
-    associate = BoxPairAssociation(min_iou=0.5, encoding='pixel')
+    associate = BoxPairAssociation(min_iou=0.5)
 
     ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
     net.eval()
@@ -128,9 +133,8 @@ def test(net, test_loader):
             det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
             if len(gt_idx):
                 labels[det_idx] = associate(
-                    # Convert ground truth boxes to zero-based index
-                    (target['boxes_h'][gt_idx].view(-1, 4) -1 ,
-                    target['boxes_o'][gt_idx].view(-1, 4) -1),
+                    (target['boxes_h'][gt_idx].view(-1, 4),
+                    target['boxes_o'][gt_idx].view(-1, 4)),
                     (boxes_h[det_idx].view(-1, 4),
                     boxes_o[det_idx].view(-1, 4)),
                     scores[det_idx].view(-1)
