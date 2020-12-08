@@ -40,7 +40,9 @@ def main(args):
         args.data_root,
         "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)
     )
-    if args.finetune:
+    if args.gt:
+        detection_path += "_gt"
+    elif args.finetune:
         detection_path += "_finetuned"
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
@@ -80,6 +82,8 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--finetune', action='store_true',
                         help="Use detections from fine-tuned detector on HICO-DET")
+    parser.add_argument('--gt', action='store_true',
+                        help="Use ground truth detections")
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--batch-size', default=1, type=int,
