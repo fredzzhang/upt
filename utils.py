@@ -101,7 +101,11 @@ def test(net, test_loader):
     testset = test_loader.dataset.dataset
     associate = BoxPairAssociation(min_iou=0.5)
 
-    ap_test = DetectionAPMeter(600, num_gt=testset.anno_interaction, algorithm='11P')
+    ap_test = DetectionAPMeter(
+        600, nproc=1,
+        num_gt=testset.anno_interaction,
+        algorithm='11P'
+    )
     net.eval()
     for batch in tqdm(test_loader):
         inputs = pocket.ops.relocate_to_cuda(batch[:-1])
