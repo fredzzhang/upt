@@ -40,7 +40,9 @@ def main(args):
         args.data_root,
         "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)
     )
-    if args.finetune:
+    if args.gt:
+        detection_path += "_gt"
+    elif args.finetune:
         detection_path += "_finetuned"
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
@@ -48,7 +50,7 @@ def main(args):
             human_idx=49,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh
-        ), collate_fn=custom_collate, batch_size=args.batch_size,
+        ), collate_fn=custom_collate, batch_size=1,
         num_workers=args.num_workers, pin_memory=True
     )
 
@@ -80,10 +82,10 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--finetune', action='store_true',
                         help="Use detections from fine-tuned detector on HICO-DET")
+    parser.add_argument('--gt', action='store_true',
+                        help="Use ground truth detections")
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--batch-size', default=1, type=int,
-                        help="Batch size for each subprocess")
     parser.add_argument('--human-thresh', default=0.5, type=float)
     parser.add_argument('--object-thresh', default=0.5, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
