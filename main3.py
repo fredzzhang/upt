@@ -58,7 +58,7 @@ def main(args):
     train_loader = DataLoader(
             dataset=CustomisedDataset(trainset, 
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/train2015"),
+                "detections/train2015"),
                 human_idx=49,
                 box_score_thresh_h=args.human_thresh,
                 box_score_thresh_o=args.object_thresh
@@ -69,7 +69,7 @@ def main(args):
     test_loader = DataLoader(
             dataset=CustomisedDataset(testset,
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/test2015"),
+                "detections/test2015"),
                 human_idx=49,
                 box_score_thresh_h=args.human_thresh,
                 box_score_thresh_o=args.object_thresh
