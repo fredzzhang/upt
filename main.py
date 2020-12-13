@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 import pocket
 from pocket.data import HICODet
 
-from models import InteractGraphNet
+from models import SpatioAttentiveGraph
 from utils import custom_collate, CustomisedEngine, CustomisedDataset
 
 def main(rank, args):
@@ -42,7 +42,7 @@ def main(rank, args):
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    net = InteractGraphNet(
+    net = SpatioAttentiveGraph(
         trainset.object_to_verb, 49,
         num_iterations=args.num_iter
     )
