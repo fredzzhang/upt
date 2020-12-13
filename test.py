@@ -38,7 +38,7 @@ def main(args):
     )
     detection_path = os.path.join(
         args.data_root,
-        "fasterrcnn_resnet50_fpn_detections/{}".format(args.partition)
+        "detections/{}".format(args.partition)
     )
     if args.gt:
         detection_path += "_gt"
