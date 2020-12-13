@@ -248,7 +248,7 @@ class InteractionHead(nn.Module):
 
         return results
 
-class InteractGraph(nn.Module):
+class GraphHead(nn.Module):
     def __init__(self,
                 out_channels,
                 roi_pool_size,

@@ -18,7 +18,7 @@ from torchvision.models.detection import transform
 import pocket.models as models
 
 from transforms import HOINetworkTransform
-from interaction_head import InteractionHead, InteractGraph
+from interaction_head import InteractionHead, GraphHead
 
 class GenericHOINetwork(nn.Module):
     """A generic architecture for HOI classification
@@ -90,7 +90,7 @@ class BoxPairPredictor(nn.Module):
     def forward(self, x):
         return self.predictor(x)
 
-class InteractGraphNet(GenericHOINetwork):
+class SpatioAttentiveGraph(GenericHOINetwork):
     def __init__(self,
             object_to_action, human_idx,
             # Backbone parameters
@@ -122,7 +122,7 @@ class InteractGraphNet(GenericHOINetwork):
             sampling_ratio=sampling_ratio
         )
 
-        box_pair_head = InteractGraph(
+        box_pair_head = GraphHead(
             out_channels=backbone.out_channels,
             roi_pool_size=output_size,
             node_encoding_size=node_encoding_size,

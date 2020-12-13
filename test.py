@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 import pocket
 from pocket.data import HICODet
 
-from models import InteractGraphNet
+from models import SpatioAttentiveGraph
 from utils import CustomisedDataset, custom_collate, test
 
 def main(args):
@@ -54,7 +54,7 @@ def main(args):
         num_workers=args.num_workers, pin_memory=True
     )
 
-    net = InteractGraphNet(
+    net = SpatioAttentiveGraph(
         dataset.object_to_verb, 49,
         num_iterations=args.num_iter
     )
