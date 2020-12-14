@@ -5,9 +5,9 @@ __We are currently cleaning up the repository...__
 ---
 Official PyTorch implementation for our paper [Spatio-attentive Graphs for Human-Object Interaction Detection](https://arxiv.org/pdf/2012.06060.pdf)
 
-<img src="./assets/bipartite_graph.png" alt="bipartite_graph" height="230" align="left"/>
-<img src="./assets/zoom_in.png" alt="zoom_in" height="230" align="left"/>
-<img src="./assets/mutibranch_fusion.png" alt="mutibranch_fusion" height="230" align="center"/>
+<img src="./assets/bipartite_graph.png" alt="bipartite_graph" height="200" align="left"/>
+<img src="./assets/zoom_in.png" alt="zoom_in" height="200" align="left"/>
+<img src="./assets/mutibranch_fusion.png" alt="mutibranch_fusion" height="200" align="center"/>
 
 ## Citation
 
