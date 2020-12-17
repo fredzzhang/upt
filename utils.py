@@ -18,6 +18,7 @@ import torch.distributed as dist
 
 from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_iou
+from torchvision.transforms.functional import hflip
 
 import pocket
 from pocket.core import DistributedLearningEngine
@@ -82,12 +83,9 @@ class CustomisedDataset(Dataset):
         return dict(boxes=boxes, labels=labels, scores=scores)
 
     def flip_boxes(self, detection, target, w):
-        detection["boxes"][:, 0] = w - detection["boxes"][:, 0]
-        detection["boxes"][:, 2] = w - detection["boxes"][:, 2]
-        target["boxes_h"][:, 0] = w - target["boxes_h"][:, 0]
-        target["boxes_h"][:, 2] = w - target["boxes_h"][:, 2]
-        target["boxes_o"][:, 0] = w - target["boxes_o"][:, 0]
-        target["boxes_o"][:, 2] = w - target["boxes_o"][:, 2]
+        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
+        target['boxes_h'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_h'])
+        target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
@@ -109,8 +107,10 @@ class CustomisedDataset(Dataset):
         detection = self.filter_detections(detection)
 
         if self._flip[i]:
-            image = torch.flip(image, dims=(2,))
-            self.flip_boxes(detection, target, image.shape[2])
+            image = hflip(image)
+            w, _ = image.size
+            self.flip_boxes(detection, target, w)
+        image = pocket.ops.to_tensor(image, 'pil')
 
         return [image], [detection], [target]
 
