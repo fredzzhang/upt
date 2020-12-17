@@ -59,7 +59,8 @@ def main(args):
                 "detections/train2015"),
                 human_idx=49,
                 box_score_thresh_h=args.human_thresh,
-                box_score_thresh_o=args.object_thresh
+                box_score_thresh_o=args.object_thresh,
+                flip=True
             ), collate_fn=custom_collate, batch_size=args.batch_size,
             num_workers=args.num_workers, pin_memory=True, shuffle=True
     )
