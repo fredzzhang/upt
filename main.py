@@ -1,3 +1,12 @@
+"""
+Train and validate with distributed data parallel
+
+Fred Zhang <frederic.zhang@anu.edu.au>
+
+The Australian National University
+Australian Centre for Robotic Vision
+"""
+
 import os
 import torch
 import argparse
@@ -9,7 +18,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 import pocket
 from pocket.data import HICODet
 
-from models import InteractGraphNet
+from models import SpatioAttentiveGraph
 from utils import custom_collate, CustomisedEngine, CustomisedDataset
 
 def main(rank, args):
@@ -42,9 +51,10 @@ def main(rank, args):
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    net = InteractGraphNet(
+    net = SpatioAttentiveGraph(
         trainset.object_to_verb, 49,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        postprocess=False
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
@@ -59,8 +69,10 @@ def main(rank, args):
         DataLoader(
             dataset=CustomisedDataset(trainset, 
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/train2015"),
-                human_idx=49
+                "detections/train2015"),
+                human_idx=49, 
+                box_score_thresh_h=args.human_thresh,
+                box_score_thresh_o=args.object_thresh
             ), collate_fn=custom_collate, batch_size=args.batch_size,
             num_workers=args.num_workers, pin_memory=True,
             sampler=DistributedSampler(
@@ -69,18 +81,19 @@ def main(rank, args):
                 rank=rank)
         ),
         DataLoader(
-            dataset=CustomisedDataset(testset,
+            dataset=CustomisedDataset(testset, 
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/test2015"),
-                human_idx=49
+                "detections/test2015"),
+                human_idx=49,
+                box_score_thresh_h=args.human_thresh,
+                box_score_thresh_o=args.object_thresh
             ), collate_fn=custom_collate, batch_size=args.batch_size,
             num_workers=args.num_workers, pin_memory=True,
             sampler=DistributedSampler(
-                testset,
-                num_replicas=args.world_size,
+                testset, 
+                num_replicas=args.world_size, 
                 rank=rank)
         ),
-        num_classes=trainset.num_action_cls,
         optim_params={
             'lr': args.learning_rate,
             'momentum': args.momentum,
@@ -114,6 +127,8 @@ if __name__ == '__main__':
                         help="Batch size for each subprocess")
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
+    parser.add_argument('--human-thresh', default=0.5, type=float)
+    parser.add_argument('--object-thresh', default=0.5, type=float)
     parser.add_argument('--milestones', nargs='+', default=[10, 15],
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=2, type=int)

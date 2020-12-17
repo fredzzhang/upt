@@ -3,6 +3,7 @@ import time
 import torch
 import argparse
 import torchvision
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torchvision.ops.boxes import box_iou
 
@@ -10,18 +11,36 @@ import pocket
 from pocket.data import HICODet
 from pocket.utils import NumericalMeter, DetectionAPMeter, HandyTimer
 
-from models import InteractGraphNet
-from utils import custom_collate, CustomisedDataset, test
+from models import SpatioAttentiveGraph
+from utils import custom_collate, CustomisedDataset
+
+@torch.no_grad()
+def test(net, test_loader):
+    net.eval()
+    ap_test = DetectionAPMeter(117, algorithm='11P')
+    for batch in tqdm(test_loader):
+        batch_cuda = pocket.ops.relocate_to_cuda(batch)
+        output = net(*batch_cuda)
+        if output is None:
+            continue
+        for result in output:
+            ap_test.append(
+                result['scores'],
+                result['prediction'],
+                result['labels']
+            )
+
+    return ap_test.eval()
 
 def main(args):
 
     torch.cuda.set_device(0)
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
 
     trainset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/train2015"),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_train2015.json"),
         transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
@@ -30,7 +49,7 @@ def main(args):
     testset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/test2015"),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_test2015.json"),
         transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
@@ -39,7 +58,7 @@ def main(args):
     train_loader = DataLoader(
             dataset=CustomisedDataset(trainset, 
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/train2015"),
+                "detections/train2015"),
                 human_idx=49,
                 box_score_thresh_h=args.human_thresh,
                 box_score_thresh_o=args.object_thresh
@@ -50,7 +69,7 @@ def main(args):
     test_loader = DataLoader(
             dataset=CustomisedDataset(testset,
                 os.path.join(args.data_root,
-                "fasterrcnn_resnet50_fpn_detections/test2015"),
+                "detections/test2015"),
                 human_idx=49,
                 box_score_thresh_h=args.human_thresh,
                 box_score_thresh_o=args.object_thresh
@@ -62,9 +81,10 @@ def main(args):
     # Fix random seed for model synchronisation
     torch.manual_seed(args.random_seed)
 
-    net = InteractGraphNet(
+    net = SpatioAttentiveGraph(
         trainset.object_to_verb, 49,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        postprocess=False
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
@@ -102,7 +122,7 @@ def main(args):
         # on_start_epoch
         #################
         net.train()
-        ap_train = DetectionAPMeter(117, algorithm='INT')
+        ap_train = DetectionAPMeter(117, algorithm='11P')
         timestamp = time.time()
         for batch in train_loader:
             ####################
@@ -122,15 +142,12 @@ def main(args):
             loss.backward()
             optimizer.step()
 
-            if output is None:
-                continue
-
             # Collate results within the batch
             for result in output:
                 ap_train.append(
-                    torch.cat(result["scores"]),
-                    torch.cat(result["labels"]),
-                    torch.cat(result["gt_labels"])
+                    result['scores'],
+                    result['prediction'],
+                    result['labels']
                 )
             ####################
             # on_end_iteration
