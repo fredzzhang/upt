@@ -35,7 +35,7 @@ def test(net, test_loader):
 def main(args):
 
     torch.cuda.set_device(0)
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
 
     trainset = HICODet(
         root=os.path.join(args.data_root,

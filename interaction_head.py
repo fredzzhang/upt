@@ -14,7 +14,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-from ops import LIS
+from ops import LIS, compute_spatial_encodings, binary_focal_loss
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
@@ -133,9 +133,14 @@ class InteractionHead(nn.Module):
             scores.append(result['scores'])
             labels.append(result['labels'])
 
-        return nn.functional.binary_cross_entropy(
-            torch.cat(scores), torch.cat(labels)
+        labels = torch.cat(labels)
+        n_p = len(torch.nonzero(labels))
+        if n_p == 0:
+            n_p = 1
+        loss = binary_focal_loss(
+            torch.cat(scores), labels, reduction='sum', gamma=0.5
         )
+        return loss / n_p
 
     def postprocess(self, logits, prior, boxes_h, boxes_o, object_class, labels):
         """
@@ -248,6 +253,67 @@ class InteractionHead(nn.Module):
 
         return results
 
+class AttentionHead(nn.Module):
+    def __init__(self, appearance_size, spatial_size, representation_size, cardinality):
+        super().__init__()
+        self.cardinality = cardinality
+
+        sub_repr_size = int(representation_size / cardinality)
+        assert sub_repr_size * cardinality == representation_size, \
+            "The given representation size should be divisible by cardinality"
+
+        self.fc_1 = nn.ModuleList([
+            nn.Linear(appearance_size, sub_repr_size)
+            for _ in range(cardinality)
+        ])
+        self.fc_2 = nn.ModuleList([
+            nn.Linear(spatial_size, sub_repr_size)
+            for _ in range(cardinality)
+        ])
+        self.fc_3 = nn.ModuleList([
+            nn.Linear(sub_repr_size, representation_size)
+            for _ in range(cardinality)
+        ])
+    def forward(self, appearance, spatial):
+        return F.relu(torch.stack([
+            fc_3(F.relu(fc_1(appearance) * fc_2(spatial)))
+            for fc_1, fc_2, fc_3
+            in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0))
+
+class MessageAttentionHead(AttentionHead):
+    def __init__(self, appearance_size, spatial_size, representation_size, node_type, cardinality):
+        super().__init__(appearance_size, spatial_size, representation_size, cardinality)
+
+        if node_type == 'human':
+            self._forward_method = self._forward_human_nodes
+        elif node_type == 'object':
+            self._forward_method = self._forward_object_nodes
+        else:
+            raise ValueError("Unknown node type \"{}\"".format(node_type))
+
+    def _forward_human_nodes(self, appearance, spatial):
+        n_h, n = spatial.shape[:2]
+        assert len(appearance) == n_h, "Incorrect size of dim0 for appearance features"
+        return torch.stack([
+            fc_3(F.relu(
+                fc_1(appearance).repeat(n, 1, 1)
+                * fc_2(spatial).permute([1, 0, 2])
+            )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0)
+    def _forward_object_nodes(self, appearance, spatial):
+        n_h, n = spatial.shape[:2]
+        assert len(appearance) == n, "Incorrect size of dim0 for appearance features"
+        return torch.stack([
+            fc_3(F.relu(
+                fc_1(appearance).repeat(n_h, 1, 1)
+                * fc_2(spatial)
+            )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
+        ]).sum(dim=0)
+
+    def forward(self, *args):
+        return self._forward_method(*args)
+
 class GraphHead(nn.Module):
     def __init__(self,
                 out_channels,
@@ -283,20 +349,46 @@ class GraphHead(nn.Module):
         )
 
         # Compute adjacency matrix
-        self.adjacency = nn.Sequential(
-            nn.Linear(node_encoding_size*2, representation_size),
-            nn.ReLU(),
-            nn.Linear(representation_size, int(representation_size/2)),
-            nn.ReLU(),
-            nn.Linear(int(representation_size/2), 1)
-        )
+        self.adjacency = nn.Linear(representation_size, 1)
 
         # Compute messages
-        self.sub_to_obj = nn.Linear(node_encoding_size, representation_size)
-        self.obj_to_sub = nn.Linear(node_encoding_size, representation_size)
+        self.sub_to_obj = MessageAttentionHead(
+            node_encoding_size, 1024,
+            representation_size, node_type='human',
+            cardinality=16
+        )
+        self.obj_to_sub = MessageAttentionHead(
+            node_encoding_size, 1024,
+            representation_size, node_type='object',
+            cardinality=16
+        )
 
         self.norm_h = nn.LayerNorm(node_encoding_size)
         self.norm_o = nn.LayerNorm(node_encoding_size)
+
+        # Map spatial encodings to the same dimension as appearance features
+        self.spatial_head = nn.Sequential(
+            nn.Linear(36, 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+        )
+
+        # Spatial attention head
+        self.attention_head = AttentionHead(
+            node_encoding_size * 2,
+            1024, representation_size,
+            cardinality=16
+        )
+
+        self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
+        # Attention head for global features
+        self.attention_head_g = AttentionHead(
+            256, 1024,
+            representation_size, cardinality=16
+        )
 
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
         """
@@ -370,6 +462,7 @@ class GraphHead(nn.Module):
         if self.training:
             assert targets is not None, "Targets should be passed during training"
 
+        global_features = self.avg_pool(features[3]).flatten(start_dim=1)
         box_features = self.box_head(box_features)
 
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
@@ -407,29 +500,46 @@ class GraphHead(nn.Module):
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
 
+            # Compute spatial features
+            box_pair_spatial = compute_spatial_encodings(
+                [coords[x]], [coords[y]], [image_shapes[b_idx]]
+            )
+            box_pair_spatial = self.spatial_head(box_pair_spatial)
+            # Reshape the spatial features
+            box_pair_spatial_reshaped = box_pair_spatial.reshape(n_h, n, -1)
+
             adjacency_matrix = torch.ones(n_h, n, device=device)
             for i in range(self.num_iter):
                 # Compute weights of each edge
-                weights = self.adjacency(torch.cat([
-                    h_node_encodings[x],
-                    node_encodings[y]
-                ], 1))
-                adjacency_matrix = weights.reshape(n_h, n)
+                weights = self.attention_head(
+                    torch.cat([
+                        h_node_encodings[x],
+                        node_encodings[y]
+                    ], 1),
+                    box_pair_spatial
+                )
+                adjacency_matrix = self.adjacency(weights).reshape(n_h, n)
 
                 # Update human nodes
-                messages_to_h = F.relu(torch.mm(
-                    adjacency_matrix.softmax(dim=1),
-                    self.obj_to_sub(node_encodings)
-                ))
+                messages_to_h = F.relu(torch.sum(
+                    adjacency_matrix.softmax(dim=1)[..., None] *
+                    self.obj_to_sub(
+                        node_encodings,
+                        box_pair_spatial_reshaped
+                    ), dim=1)
+                )
                 h_node_encodings = self.norm_h(
                     h_node_encodings + messages_to_h
                 )
 
                 # Update object nodes (including human nodes)
-                messages_to_o = F.relu(torch.mm(
-                    adjacency_matrix.t().softmax(dim=1),
-                    self.sub_to_obj(h_node_encodings)
-                ))
+                messages_to_o = F.relu(torch.sum(
+                    adjacency_matrix.t().softmax(dim=1)[..., None] *
+                    self.sub_to_obj(
+                        h_node_encodings,
+                        box_pair_spatial_reshaped
+                    ), dim=1)
+                )
                 node_encodings = self.norm_o(
                     node_encodings + messages_to_o
                 )
@@ -440,13 +550,20 @@ class GraphHead(nn.Module):
                 )
                 
             all_box_pair_features.append(torch.cat([
-                h_node_encodings[x_keep], node_encodings[y_keep]
-            ], 1))
+                self.attention_head(
+                    torch.cat([
+                        h_node_encodings[x_keep],
+                        node_encodings[y_keep]
+                        ], 1),
+                    box_pair_spatial_reshaped[x_keep, y_keep]
+                ), self.attention_head_g(
+                    global_features[b_idx, None],
+                    box_pair_spatial_reshaped[x_keep, y_keep])
+            ], dim=1))
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
-            # The prior score is the product between edge weights and the
-            # pre-computed object detection scores with LIS
+            # The prior score is the product of the pre-computed object detection scores with LIS
             all_prior.append(
                 self.compute_prior_scores(x_keep, y_keep, scores, labels)
             )
