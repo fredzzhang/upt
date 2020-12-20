@@ -10,3 +10,6 @@ log
 out
 temp*
 checkpoints
+
+# Dataset
+hicodet
