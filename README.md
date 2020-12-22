@@ -60,11 +60,39 @@ python generate_gt_detections.py --partition test2015
 cd ../../download
 bash download_finetuned_detections.sh
 ```
-
-## Training
-
-Please wait for further instructions...
+To attempt fine-tuning yourself, refer to the [instructions](https://github.com/fredzzhang/hicodet/tree/main/detections#fine-tune-the-detector-on-hico-det) in the [HICO-DET repository](https://github.com/fredzzhang/hicodet). The checkpoint of our fine-tuned detector can be found [here](https://drive.google.com/file/d/11lS2BQ_In-22Q-SRTRjRQaSLg9nSim9h/view?usp=sharing).
 
 ## Testing
 
-Please wait for further instructions...
+1. Download the checkpoint of our trained model
+```bash
+cd /path/to/spatio-attentive-graphs/download
+bash download_checkpoint.sh
+```
+2. Test a model
+```bash
+cd /path/to/spatio-attentive-graphs
+CUDA_VISIBLE_DEVICES=0 python test.py --model-path checkpoints/spatio-attentive-graph-hicodet-e11.pt
+```
+By default, detections from a pre-trained detector is used. To change sources of detections, use the argument `--detection-dir`, e.g. `--detection-dir hicodet/detections/test2015_gt` to select ground truth detections. Fine-tuned detections (if you downloaded them) are available under `hicodet/detections`.
+
+3. Cache detections for Matlab evaluation following [HO-RCNN](https://github.com/ywchao/ho-rcnn) (optional)
+```bash
+cd /path/to/spatio-attentive-graphs
+CUDA_VISIBLE_DEVICES=0 python cache.py --model-path checkpoints/spatio-attentive-graph-hicodet-e11.pt
+```
+By default, 80 `.mat` files, one for each object class, will be cached in a directory named `matlab`. Use the `--cache-dir` argument to change the cache directory. To change sources of detections, refer to the use of `--detection-dir` in the previous section.
+
+As a reference, the performance of the provided model is shown in the table below
+
+|Detector|mAP (Full, Rare, Non-rare)|
+|:-|:-:|
+|Pre-trained on MS COCO|(`18.24`, `12.91`, `19.83`)|
+|Fine-tuned on HICO-DET ([VCL](https://github.com/zhihou7/VCL))|(`22.04`, `15.73`, `23.93`)|
+|Fine-tuned on HICO-DET ([This repo](https://github.com/fredzzhang/hicodet))|(`22.56`, `15.52`, `24.67`)|
+|Fine-tuned on HICO-DET ([DRG](https://github.com/vt-vl-lab/DRG))|(`28.54`, `21.10`, `30.77`)|
+|Ground truth detections|(`47.88`, `34.03`, `52.01`)|
+
+## Training
+
+We are currently cleaning up the code...
