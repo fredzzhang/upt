@@ -78,7 +78,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
-    parser.add_argument('--data-root', required=True, type=str)
+    parser.add_argument('--data-root', required='hicodet', type=str)
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--finetune', action='store_true',
                         help="Use detections from fine-tuned detector on HICO-DET")
@@ -86,8 +86,8 @@ if __name__ == "__main__":
                         help="Use ground truth detections")
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--human-thresh', default=0.5, type=float)
-    parser.add_argument('--object-thresh', default=0.5, type=float)
+    parser.add_argument('--human-thresh', default=0.2, type=float)
+    parser.add_argument('--object-thresh', default=0.2, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
     
