@@ -1,3 +1,4 @@
 [submodule "hicodet"]
 	path = hicodet
 	url = https://github.com/fredzzhang/hicodet
+	branch = main
