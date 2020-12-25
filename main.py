@@ -33,18 +33,16 @@ def main(rank, args):
     trainset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/train2015"),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_train2015.json"),
-        transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
     )
 
     testset = HICODet(
         root=os.path.join(args.data_root,
             "hico_20160224_det/images/test2015"),
-        annoFile=os.path.join(args.data_root,
+        anno_file=os.path.join(args.data_root,
             "instances_test2015.json"),
-        transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
     )
 

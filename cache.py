@@ -105,7 +105,6 @@ def main(args):
             "hico_20160224_det/images/{}".format(args.partition)),
         anno_file=os.path.join(args.data_root,
             "instances_{}.json".format(args.partition)),
-        transform=torchvision.transforms.ToTensor(),
         target_transform=pocket.ops.ToTensor(input_format='dict')
     )
     dataloader = DataLoader(
