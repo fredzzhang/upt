@@ -21,7 +21,7 @@ from torchvision.ops.boxes import box_iou
 from torchvision.transforms.functional import hflip
 
 import pocket
-from pocket.core import DistributedLearningEngine
+from pocket.core import LearningEngine, DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 
 def custom_collate(batch):
@@ -114,7 +114,6 @@ class CustomisedDataset(Dataset):
 
         return [image], [detection], [target]
 
-
 def test(net, test_loader):
     testset = test_loader.dataset.dataset
     associate = BoxPairAssociation(min_iou=0.5)
@@ -166,27 +165,88 @@ def test(net, test_loader):
 
     return ap_test.eval()
 
-class CustomisedEngine(DistributedLearningEngine):
+class CustomisedLE(LearningEngine):
     def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
         super().__init__(net, None, train_loader, **kwargs)
         self.val_loader = val_loader
         self.num_classes = num_classes
 
+    def _on_start(self):
+        self.ap_train = DetectionAPMeter(self.num_classes, algorithm='11P')
+        self.timer = HandyTimer(maxlen=2)
+
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
-        self._state.output = self._state.net(
-            *self._state.inputs, targets=self._state.targets)
-        self._state.loss = self._state.output.pop()
+        output = self._state.net(
+            *self._state.inputs, targets=self._state.targets
+        )
+        if output is None:
+            return
+        self._state.loss = output.pop()
         self._state.loss.backward()
         self._state.optimizer.step()
 
-        self._synchronise_and_log_results(self._state.output, self.ap_train)
+        for result in output:
+            self.ap_train.append(
+                result['scores'],
+                result['prediction'],
+                result['labels']
+            )
+
+    def _on_end_epoch(self):
+        # Time the computation of mAP on training set
+        with self.timer:
+            ap_train = self.ap_train.eval()
+        # Run validation and compute mAP
+        with self.timer:
+            ap_val = self.validate()
+        # Print performance and time
+        print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
+            "validation mAP: {:.4f}, total time: {:.2f}s".format(
+                self._state.epoch, ap_train.mean().item(), self.timer[0],
+                ap_val.mean().item(), self.timer[1]
+        ))
+        self.ap_train.reset()
+        super()._on_end_epoch()
+
+    @torch.no_grad()
+    def validate(self):
+        self._state.net.eval()
+        ap_test = DetectionAPMeter(117, algorithm='11P')
+        for batch in tqdm(self.val_loader):
+            batch_cuda = pocket.ops.relocate_to_cuda(batch)
+            output = self._state.net(*batch_cuda)
+            if output is None:
+                continue
+            for result in output:
+                ap_test.append(
+                    result['scores'],
+                    result['prediction'],
+                    result['labels']
+                )
+
+        return ap_test.eval()
+
+class CustomisedDLE(DistributedLearningEngine):
+    def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
+        super().__init__(net, None, train_loader, **kwargs)
+        self.val_loader = val_loader
+        self.num_classes = num_classes
 
     def _on_start(self):
         self.ap_train = DetectionAPMeter(self.num_classes, algorithm='11P')
 
+    def _on_each_iteration(self):
+        self._state.optimizer.zero_grad()
+        output = self._state.net(
+            *self._state.inputs, targets=self._state.targets)
+        self._state.loss = output.pop()
+        self._state.loss.backward()
+        self._state.optimizer.step()
+
+        self._synchronise_and_log_results(output, self.ap_train)
+
     def _on_end_epoch(self):
-        super()._on_end_epoch()
         timer = HandyTimer(maxlen=2)
         # Compute training mAP
         if self._rank == 0:
@@ -203,6 +263,7 @@ class CustomisedEngine(DistributedLearningEngine):
                     ap_val.mean().item(), timer[1]
             ))
             self.ap_train.reset()
+        super()._on_end_epoch()
 
     def _synchronise_and_log_results(self, output, meter):
         scores = []; pred = []; labels = []
@@ -227,15 +288,12 @@ class CustomisedEngine(DistributedLearningEngine):
 
     @torch.no_grad()
     def validate(self):
-        """Test the network and return classification mAP"""
         ap_val = DetectionAPMeter(self.num_classes, algorithm='11P')
         
         self._state.net.eval()
         for batch in self.val_loader:
             inputs = pocket.ops.relocate_to_cuda(batch)
             results = self._state.net(*inputs)
-            if results is None:
-                continue
 
             self._synchronise_and_log_results(results, ap_val)
 
