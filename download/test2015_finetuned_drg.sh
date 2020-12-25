@@ -5,7 +5,7 @@ FILE=test2015_finetuned_drg.tar.gz
 EXTR=test2015_finetuned_drg
 ID=1UCrgUgF1MSDjAcunqHpszOUDYCgfdOHw
 
-if [ -f $DIR/$EXTR ]; then
+if [ -d $DIR/$EXTR ]; then
   echo "$EXTR already exists under $DIR."
   exit 0
 fi
