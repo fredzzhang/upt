@@ -2,10 +2,11 @@
 
 DIR=../hicodet/detections
 FILE=test2015_finetuned_ours.tar.gz
+EXTR=test2015_finetuned_ours
 ID=1ff4P70n0vb0oPMb5eH1FveDnKrE1Etjl
 
-if [ -f $FILE ]; then
-  echo "$FILE already exists."
+if [ -f $DIR/$EXTR ]; then
+  echo "$EXTR already exists under $DIR."
   exit 0
 fi
 
@@ -20,6 +21,6 @@ tar zxf $FILE
 echo "Relocating and cleaning up..."
 
 rm $FILE
-mv test2015_finetuned_ours $DIR/
+mv $EXTR $DIR/
 
 echo "Done."
