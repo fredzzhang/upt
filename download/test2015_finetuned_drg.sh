@@ -1,5 +1,6 @@
 #!/bin/bash
 
+DIR=../hicodet/detections
 FILE=test2015_finetuned_drg.tar.gz
 ID=1UCrgUgF1MSDjAcunqHpszOUDYCgfdOHw
 
@@ -15,5 +16,10 @@ wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download
 echo "Extracting..."
 
 tar zxf $FILE
+
+echo "Relocating and cleaning up..."
+
+rm $FILE
+mv test2015_finetuned_drg $DIR/
 
 echo "Done."

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+DIR=../hicodet/detections
 FILE=test2015_finetuned_vcl.tar.gz
 ID=1eMj8DON8NkutD6kWT_U-xiP4B5jsKXF6
 
@@ -15,5 +16,10 @@ wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download
 echo "Extracting..."
 
 tar zxf $FILE
+
+echo "Relocating and cleaning up..."
+
+rm $FILE
+mv test2015_finetuned_vcl $DIR/
 
 echo "Done."
