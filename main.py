@@ -45,9 +45,8 @@ def main(args):
     )
 
     train_loader = DataLoader(
-        dataset=CustomisedDataset(trainset, 
-            os.path.join(args.data_root,
-            "detections/train2015"),
+        dataset=CustomisedDataset(trainset,
+            detection_dir=args.train_detection_dir,
             human_idx=49,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh,
@@ -58,8 +57,7 @@ def main(args):
 
     val_loader = DataLoader(
         dataset=CustomisedDataset(testset,
-            os.path.join(args.data_root,
-            "detections/test2015"),
+            detection_dir=args.val_detection_dir,
             human_idx=49,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh
@@ -108,6 +106,8 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-root', default='hicodet', type=str)
+    parser.add_argument('--train-detection-dir', default='hicodet/detections/train2015', type=str)
+    parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
     parser.add_argument('--num-epochs', default=15, type=int)
