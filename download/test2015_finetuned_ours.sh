@@ -21,6 +21,8 @@ tar zxf $FILE
 echo "Relocating and cleaning up..."
 
 rm $FILE
-mv $EXTR $DIR/
+mv $EXTR/train2015 $DIR/train2015_finetuned_ours
+mv $EXTR/test2015 $DIR/test2015_finetuned_ours
+rm -d $EXTR
 
 echo "Done."
