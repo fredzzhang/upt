@@ -103,9 +103,9 @@ Note that setting the environmental variable `CUDA_VISIBLE_DEVICES` is necessary
 
 2. Training with `DistributedDataParallel` (not fully tested)
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 python main_dist.py --word-size 4 --learning-rate 0.004 &>log &
+CUDA_VISIBLE_DEVICES=0,1,2,3 python main_dist.py --world-size 4 --learning-rate 0.004 &>log &
 ```
-Specify the number of GPUs with the argument `--word-size`, which should be no larger than the number of GPUs specified by `CUDA_VISIBLE_DEVICES`. The default learning rate for a single GPU is `0.001`. As a rule of thumb, multiply that by the number of GPUs during training. For more arguments, run `python main_dist.py --help` to find out.
+Specify the number of GPUs with the argument `--world-size`, which should be no larger than the number of GPUs specified by `CUDA_VISIBLE_DEVICES`. The default learning rate for a single GPU is `0.001`. As a rule of thumb, multiply that by the number of GPUs during training. For more arguments, run `python main_dist.py --help` to find out.
 
 ## Contact
 
