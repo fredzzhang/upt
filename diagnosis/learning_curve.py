@@ -1,5 +1,5 @@
 """
-Plot learning curves
+Parse training log and plot learning curves
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 
@@ -47,9 +47,9 @@ def plot_learning_curve(source):
 
     for k, c in zip(data, colours):
         plt.plot(data[k][:, 0], color=c, linewidth=1, label='{} train'.format(labels[k]))
-        plt.plot(data[k][:, 1], color=c, linewidth=2, label='{} test'.format(labels[k]))
+        plt.plot(data[k][:, 1], color=c, linewidth=2, label='{} val'.format(labels[k]))
     plt.xlabel("Epoch")
-    plt.ylabel("mAP")
+    plt.ylabel("Action Classification mAP")
     leg = plt.legend()
     leg.set_draggable(True)
     plt.show()
