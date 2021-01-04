@@ -79,13 +79,13 @@ if __name__ == "__main__":
                         type=str, required=True)
     parser.add_argument("--data-root",
                         help="Path to HICODet root directory",
-                        type=str, required=True)
+                        type=str, default='../hicodet')
     parser.add_argument("--partition",
                         help="Choose between train2015 and test2015",
                         type=str, default="test2015")
     parser.add_argument("--cache-dir",
                         help="Directory where visualisations will be saved",
-                        type=str, required=True)
+                        type=str, default='./cache')
     parser.add_argument("--num-pos",
                         help="Maximum number of positive examples to visualise",
                         default=100, type=int)

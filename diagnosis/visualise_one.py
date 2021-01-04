@@ -1,5 +1,6 @@
 """
-Visualise all box pairs in one image
+Visualise all human-object pairs of a specified
+interaction class in one image
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 
@@ -72,18 +73,18 @@ if __name__ == '__main__':
     parser.add_argument("--dir",
                         help="Directory where .mat files are stored",
                         type=str, required=True)
-    parser.add_argument("--data-root",
-                        help="Path to HICODet root directory",
-                        type=str, required=True)
-    parser.add_argument("--cache-dir",
-                        help="Directory where visualisations will be saved",
-                        type=str, required=True)
     parser.add_argument("--image-idx",
                         help="Index of the image to be visualised",
                         type=int, required=True)
     parser.add_argument("--interaction",
                         help="Index of the interaction to be visualised",
                         type=int, required=True)
+    parser.add_argument("--data-root",
+                        help="Path to HICODet root directory",
+                        type=str, default='../hicodet')
+    parser.add_argument("--cache-dir",
+                        help="Directory where visualisations will be saved",
+                        type=str, default='./cache')
     parser.add_argument("--partition",
                         help="Choose between train2015 and test2015",
                         type=str, default="test2015")
