@@ -125,6 +125,9 @@ def main(args):
         print("Loading model from ", args.model_path)
         checkpoint = torch.load(args.model_path, map_location="cpu")
         net.load_state_dict(checkpoint['model_state_dict'])
+    elif len(args.model_path):
+        print("\nWARNING: The given model path does not exist. "
+            "Proceed to use a randomly initialised model.\n")
 
     net.cuda()
     
