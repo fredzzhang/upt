@@ -35,10 +35,6 @@ def main(args):
             "instances_{}.json".format(args.partition)),
         target_transform=pocket.ops.ToTensor(input_format='dict')
     )
-    detection_path = os.path.join(
-        args.data_root,
-        "detections/{}".format(args.partition)
-    )
     dataloader = DataLoader(
         dataset=CustomisedDataset(dataset,
             args.detection_dir,
@@ -59,6 +55,9 @@ def main(args):
         checkpoint = torch.load(args.model_path, map_location="cpu")
         net.load_state_dict(checkpoint['model_state_dict'])
         epoch = checkpoint["epoch"]
+    elif len(args.model_path):
+        print("\nWARNING: The given model path does not exist. "
+            "Proceed to use a randomly initialised model.\n")
 
     net.cuda()
     timer = pocket.utils.HandyTimer(maxlen=1)
