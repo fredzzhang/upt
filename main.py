@@ -18,36 +18,21 @@ from torchvision.ops.boxes import box_iou
 
 import pocket
 from pocket.data import HICODet
-from pocket.utils import NumericalMeter, DetectionAPMeter, HandyTimer
 
 from models import SpatioAttentiveGraph
-from utils import custom_collate, CustomisedDataset, CustomisedLE
+from utils import custom_collate, CustomisedLE, DataFactory
 
 def main(args):
 
     torch.cuda.set_device(0)
+    torch.manual_seed(args.random_seed)
     torch.backends.cudnn.benchmark = False
 
-    trainset = HICODet(
-        root=os.path.join(args.data_root,
-            "hico_20160224_det/images/train2015"),
-        anno_file=os.path.join(args.data_root,
-            "instances_train2015.json"),
-        target_transform=pocket.ops.ToTensor(input_format='dict')
-    )
-
-    testset = HICODet(
-        root=os.path.join(args.data_root,
-            "hico_20160224_det/images/test2015"),
-        anno_file=os.path.join(args.data_root,
-            "instances_test2015.json"),
-        target_transform=pocket.ops.ToTensor(input_format='dict')
-    )
-
     train_loader = DataLoader(
-        dataset=CustomisedDataset(trainset,
-            detection_dir=args.train_detection_dir,
-            human_idx=49,
+        dataset=DataFactory(
+            name=args.dataset, partition=args.partitions[0],
+            data_root=args.data_root,
+            detection_root=args.train_detection_dir,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh,
             flip=True
@@ -56,21 +41,24 @@ def main(args):
     )
 
     val_loader = DataLoader(
-        dataset=CustomisedDataset(testset,
-            detection_dir=args.val_detection_dir,
-            human_idx=49,
+        dataset=DataFactory(
+            name=args.dataset, partition=args.partitions[1],
+            data_root=args.data_root,
+            detection_root=args.val_detection_dir,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=args.batch_size,
         num_workers=args.num_workers, pin_memory=True
     )
 
-
-    # Fix random seed for model synchronisation
-    torch.manual_seed(args.random_seed)
-
+    if args.dataset == 'hicodet':
+        object_to_target = train_loader.dataset.object_to_verb
+        human_idx = 49
+    elif args.dataset == 'vcoco':
+        object_to_target = train_loader.dataset.object_to_action
+        human_idx = 1
     net = SpatioAttentiveGraph(
-        trainset.object_to_verb, 49,
+        object_to_target, human_idx,
         num_iterations=args.num_iter,
         postprocess=False
     )
@@ -105,6 +93,8 @@ def main(args):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', default='hicodet', type=str)
+    parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--train-detection-dir', default='hicodet/detections/train2015', type=str)
     parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
