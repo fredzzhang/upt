@@ -54,9 +54,11 @@ def main(args):
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
         human_idx = 49
+        num_classes = 117
     elif args.dataset == 'vcoco':
         object_to_target = train_loader.dataset.dataset.object_to_action
         human_idx = 1
+        num_classes = 24
     net = SpatioAttentiveGraph(
         object_to_target, human_idx,
         num_iterations=args.num_iter,
@@ -74,6 +76,7 @@ def main(args):
         net,
         train_loader,
         val_loader,
+        num_classes=num_classes,
         optim_params={
             'lr': args.learning_rate,
             'momentum': args.momentum,

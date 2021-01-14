@@ -241,7 +241,7 @@ class CustomisedLE(LearningEngine):
     @torch.no_grad()
     def validate(self):
         self._state.net.eval()
-        meter = DetectionAPMeter(117, algorithm='11P')
+        meter = DetectionAPMeter(self.num_classes, algorithm='11P')
         for batch in tqdm(self.val_loader):
             batch_cuda = pocket.ops.relocate_to_cuda(batch)
             output = self._state.net(*batch_cuda)
