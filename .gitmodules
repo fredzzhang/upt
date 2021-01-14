@@ -2,3 +2,7 @@
 	path = hicodet
 	url = https://github.com/fredzzhang/hicodet
 	branch = main
+[submodule "vcoco"]
+	path = vcoco
+	url = https://github.com/fredzzhang/vcoco
+	branch = main
