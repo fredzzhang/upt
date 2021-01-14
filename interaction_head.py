@@ -427,7 +427,7 @@ class GraphHead(nn.Module):
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
-        target_cls_idx = [self.object_class_to_target_class[obj]
+        target_cls_idx = [self.object_class_to_target_class[obj.item()]
             for obj in object_class[y]]
         # Duplicate box pair indices for each target class
         pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
