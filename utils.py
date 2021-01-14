@@ -68,9 +68,7 @@ class DataFactory(Dataset):
             )
             self.dataset = VCOCO(
                 root=os.path.join(data_root, image_dir[partition]),
-                anno_file=os.path.join(
-                    data_root,
-                    'mscoco2014/instances_vcoco_{}.json'.format(partition)
+                anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
                 ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
             self.human_idx = 1
@@ -80,7 +78,7 @@ class DataFactory(Dataset):
 
         self.box_score_thresh_h = box_score_thresh_h
         self.box_score_thresh_o = box_score_thresh_o
-        self._flip = torch.randint(0, 2, (len(self.dataset))) if flip \
+        self._flip = torch.randint(0, 2, (len(self.dataset),)) if flip \
             else torch.zeros(len(self.dataset))
 
     def __len__(self):
@@ -125,6 +123,7 @@ class DataFactory(Dataset):
             target['boxes_o'][:, :2] -= 1
         else:
             target['labels'] = target['actions']
+            target['object'] = target.pop('objects')
 
         detection_path = os.path.join(
             self.detection_root,
