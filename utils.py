@@ -20,6 +20,9 @@ from torch.utils.data import Dataset
 from torchvision.ops.boxes import box_iou
 from torchvision.transforms.functional import hflip
 
+from vcoco.vcoco import VCOCO
+from hicodet.hicodet import HICODet
+
 import pocket
 from pocket.core import LearningEngine, DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
@@ -34,26 +37,51 @@ def custom_collate(batch):
         targets.append(tar)
     return images, detections, targets
 
-class CustomisedDataset(Dataset):
-    def __init__(self, dataset, detection_dir,
-            # Parameters for preprocessing
-            human_idx,
-            box_score_thresh_h=0.3,
-            box_score_thresh_o=0.3,
-            flip=False
+class DataFactory(Dataset):
+    def __init__(self,
+            name, partition,
+            data_root, detection_root,
+            flip=False,
+            box_score_thresh_h=0.2,
+            box_score_thresh_o=0.2
             ):
+        if name not in ['hicodet', 'vcoco']:
+            raise ValueError("Unknown dataset ", name)
 
-        self.dataset = dataset
-        self.detection_dir = detection_dir
+        if name == 'hicodet':
+            assert partition in ['train2015', 'test2015'], \
+                "Unknown HICO-DET partition " + partition
+            self.dataset = HICODet(
+                root=os.path.join(data_root, 'hico_20160224_det/images', partition),
+                anno_file=os.path.join(data_root, 'instances_{}.json'.format(partition)),
+                target_transform=pocket.ops.ToTensor(input_format='dict')
+            )
+            self.human_idx = 49
+        else:
+            assert partition in ['train', 'val', 'trainval', 'test'], \
+                "Unknown V-COCO partition " + partition
+            image_dir = dict(
+                train='mscoco2014/train2014',
+                val='mscoco2014/train2014',
+                trainval='mscoco2014/train2014',
+                test='mscoco2014/val2014'
+            )
+            self.dataset = VCOCO(
+                root=os.path.join(data_root, image_dir[partition]),
+                anno_file=os.path.join(
+                    data_root,
+                    'mscoco2014/instances_vcoco_{}.json'.format(partition)
+                ), target_transform=pocket.ops.ToTensor(input_format='dict')
+            )
+            self.human_idx = 1
 
-        self.human_idx = human_idx
+        self.name = name
+        self.detection_root = detection_root
+
         self.box_score_thresh_h = box_score_thresh_h
         self.box_score_thresh_o = box_score_thresh_o
-
-        if flip:
-            self._flip = torch.randint(0, 2, (len(dataset),))
-        else:
-            self._flip = torch.zeros(len(dataset))
+        self._flip = torch.randint(0, 2, (len(self.dataset))) if flip \
+            else torch.zeros(len(self.dataset))
 
     def __len__(self):
         return len(self.dataset)
@@ -89,15 +117,17 @@ class CustomisedDataset(Dataset):
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
-        target['labels'] = target['verb']
-
-        # Convert ground truth boxes to zero-based index and the
-        # representation from pixel indices to coordinates
-        target['boxes_h'][:, :2] -= 1
-        target['boxes_o'][:, :2] -= 1
+        if self.name == 'hicodet':
+            target['labels'] = target['verb']
+            # Convert ground truth boxes to zero-based index and the
+            # representation from pixel indices to coordinates
+            target['boxes_h'][:, :2] -= 1
+            target['boxes_o'][:, :2] -= 1
+        else:
+            target['labels'] = target['actions']
 
         detection_path = os.path.join(
-            self.detection_dir,
+            self.detection_root,
             self.dataset.filename(i).replace('jpg', 'json')
         )
         with open(detection_path, 'r') as f:
