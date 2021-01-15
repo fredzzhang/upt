@@ -121,7 +121,8 @@ def inference_vcoco(net, dataloader, cache_dir):
             })
 
     with open(os.path.join(cache_dir, 'vcoco_results.pkl'), 'wb') as f:
-        pickle.dump(all_results, f, pickle.HIGHEST_PROTOCOL)
+        # Use protocol 2 for compatibility with Python2
+        pickle.dump(all_results, f, 2)
 
 def main(args):
     torch.cuda.set_device(0)
@@ -141,8 +142,14 @@ def main(args):
         num_workers=args.num_workers, pin_memory=True
     )
 
+    if args.dataset == 'hicodet':
+        object_target = dataloader.dataset.dataset.object_to_verb
+        human_idx = 49
+    elif args.dataset == 'vcoco':
+        object_to_target = dataloader.dataset.dataset.object_to_action
+        human_idx = 1
     net = SpatioAttentiveGraph(
-        dataloader.dataset.dataset.object_to_verb, 49,
+        object_to_target, human_idx,
         num_iterations=args.num_iter
     )
     if os.path.exists(args.model_path):
@@ -155,11 +162,11 @@ def main(args):
 
     net.cuda()
     
-    if args.name == 'hicodet':
+    if args.dataset == 'hicodet':
         with open(os.path.join(args.data_root, 'coco80tohico80.json'), 'r') as f:
             coco2hico = json.load(f)
         inference_hicodet(net, dataloader, coco2hico, args.cache_dir)
-    elif args.name == 'vcoco':
+    elif args.dataset == 'vcoco':
         inference_vcoco(net, dataloader, args.cache_dir)
 
 if __name__ == "__main__":
