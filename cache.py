@@ -16,6 +16,7 @@ import numpy as np
 import scipy.io as sio
 
 from tqdm import tqdm
+from collections import defaultdict
 from torch.utils.data import DataLoader
 
 import pocket
@@ -90,6 +91,19 @@ def inference_hicodet(net, dataloader, coco2hico, cache_dir):
         )
 
 def inference_vcoco(net, dataloader, cache_dir):
+    class CacheTemplate(defaultdict):
+        def __init__(self, **kwargs):
+            super().__init__()
+            for k, v in kwargs.items():
+                self[k] = v
+        def __missing__(self, k):
+            seg = k.split('_')
+            # Assign zero score to missing actions
+            if seg[-1] == 'agent':
+                return 0.
+            # Assign zero score and a tiny box to missing <action,role> pairs
+            else:
+                return [0., 0., .1, .1, 0.]
     dataset = dataloader.dataset.dataset
     net.eval()
     all_results = []
@@ -113,12 +127,10 @@ def inference_vcoco(net, dataloader, cache_dir):
 
         for bh, bo, s, a in zip(boxes_h, boxes_o, scores, actions):
             a_name = dataset.actions[a].split()
-            all_results.append({
-                'image_id': image_id,
-                'person_box': bh.tolist(),
-                a_name[0] + '_agent': s.item(),
-                '_'.join(a_name): bo.tolist() + [s.item()]
-            })
+            result = CacheTemplate(image_id=image_id, person_box=bh.tolist())
+            result[a_name[0] + '_agent'] = s.item()
+            result['_'.join(a_name)] = bo.tolist() + [s.item()]
+            all_results.append(result)
 
     with open(os.path.join(cache_dir, 'vcoco_results.pkl'), 'wb') as f:
         # Use protocol 2 for compatibility with Python2
@@ -143,7 +155,7 @@ def main(args):
     )
 
     if args.dataset == 'hicodet':
-        object_target = dataloader.dataset.dataset.object_to_verb
+        object_to_target = dataloader.dataset.dataset.object_to_verb
         human_idx = 49
     elif args.dataset == 'vcoco':
         object_to_target = dataloader.dataset.dataset.object_to_action
