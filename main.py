@@ -69,8 +69,18 @@ def main(args):
         p.requires_grad = False
 
     if os.path.exists(args.model_path):
-        net.load_state_dict(torch.load(args.model_path)['model_state_dict'])
-        print("Model loaded from ", args.model_path)
+        print("Continue from saved checkpoint ", args.checkpoint_path)
+        checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
+        net.load_state_dict(checkpoint['model_state_dict'])
+        optim_state_dict = checkpoint['optim_state_dict']
+        sched_state_dict = checkpoint['scheduler_state_dict']
+        epoch = checkpoint['epoch']
+        iteration = checkpoint['iteration']
+    else:
+        print("Start from a randomly intialised model")
+        optim_state_dict = None
+        sched_state_dict = None
+        epoch = 0; iteration = 0
 
     engine = CustomisedLE(
         net,
@@ -82,6 +92,7 @@ def main(args):
             'momentum': args.momentum,
             'weight_decay': args.weight_decay
         },
+        optim_state_dict=optim_state_dict,
         lr_scheduler=True,
         lr_sched_params={
             'milestones': args.milestones,
@@ -90,6 +101,9 @@ def main(args):
         print_interval=args.print_interval,
         cache_dir=args.cache_dir
     )
+    engine.update_state_key(epoch=epoch, iteration=iteration)
+    if sched_state_dict is not None:
+        engine.fetch_state_key('lr_scheduler').load_state_dict(sched_state_dict)
 
     engine(args.num_epochs)
 
@@ -118,7 +132,7 @@ if __name__ == '__main__':
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=4, type=int)
     parser.add_argument('--print-interval', default=2000, type=int)
-    parser.add_argument('--model-path', default='', type=str)
+    parser.add_argument('--checkpoint-path', default='', type=str)
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
 
     args = parser.parse_args()
