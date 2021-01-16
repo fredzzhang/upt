@@ -14,10 +14,9 @@ import torchvision
 from torch.utils.data import DataLoader
 
 import pocket
-from pocket.data import HICODet
 
 from models import SpatioAttentiveGraph
-from utils import CustomisedDataset, custom_collate, test
+from utils import DataFactory, custom_collate, test
 
 def main(args):
     torch.cuda.set_device(0)
@@ -28,17 +27,11 @@ def main(args):
     rare = torch.nonzero(num_anno < 10).squeeze(1)
     non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
 
-    dataset = HICODet(
-        root=os.path.join(args.data_root,
-            "hico_20160224_det/images/{}".format(args.partition)),
-        anno_file=os.path.join(args.data_root,
-            "instances_{}.json".format(args.partition)),
-        target_transform=pocket.ops.ToTensor(input_format='dict')
-    )
     dataloader = DataLoader(
-        dataset=CustomisedDataset(dataset,
-            args.detection_dir,
-            human_idx=49,
+        dataset=DataFactory(
+            name='hicodet', partition=args.partition,
+            data_root=args.data_root,
+            detection_root=args.detection_dir,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=1,
@@ -46,7 +39,7 @@ def main(args):
     )
 
     net = SpatioAttentiveGraph(
-        dataset.object_to_verb, 49,
+        dataloader.dataset.dataset.object_to_verb, 49,
         num_iterations=args.num_iter
     )
     epoch = 0

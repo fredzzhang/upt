@@ -1,5 +1,5 @@
 """
-Run inference and cache detections as .mat files
+Run inference and cache detections
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 
@@ -10,21 +10,21 @@ Australian Centre for Robotic Vision
 import os
 import json
 import torch
+import pickle
 import argparse
-import torchvision
 import numpy as np
 import scipy.io as sio
 
 from tqdm import tqdm
+from collections import defaultdict
 from torch.utils.data import DataLoader
 
 import pocket
-from pocket.data import HICODet
 
 from models import SpatioAttentiveGraph
-from utils import CustomisedDataset, custom_collate
+from utils import DataFactory, custom_collate
 
-def inference(net, dataloader, coco2hico, cache_dir):
+def inference_hicodet(net, dataloader, coco2hico, cache_dir):
     dataset = dataloader.dataset.dataset
     net.eval()
     all_results = np.empty((600, 9658), dtype=object)
@@ -90,6 +90,54 @@ def inference(net, dataloader, coco2hico, cache_dir):
             dict(all_boxes=all_results[interaction_idx])
         )
 
+class CacheTemplate(defaultdict):
+    """A template for VCOCO cached results """
+    def __init__(self, **kwargs):
+        super().__init__()
+        for k, v in kwargs.items():
+            self[k] = v
+    def __missing__(self, k):
+        seg = k.split('_')
+        # Assign zero score to missing actions
+        if seg[-1] == 'agent':
+            return 0.
+        # Assign zero score and a tiny box to missing <action,role> pairs
+        else:
+            return [0., 0., .1, .1, 0.]
+
+def inference_vcoco(net, dataloader, cache_dir):
+    dataset = dataloader.dataset.dataset
+    net.eval()
+    all_results = []
+    for i, batch in enumerate(tqdm(dataloader)):
+        inputs = pocket.ops.relocate_to_cuda(batch[:-1])
+        with torch.no_grad():
+            output = net(*inputs)
+        if output is None:
+            continue
+
+        # Batch size is fixed as 1 for inference
+        assert len(output) == 1, "Batch size is not 1"
+        output = pocket.ops.relocate_to_cpu(output[0])
+
+        image_id = dataset.image_id(i)
+        box_idx = output['index']
+        boxes_h = output['boxes_h'][box_idx]
+        boxes_o = output['boxes_o'][box_idx]
+        scores = output['scores']
+        actions = output['prediction']
+
+        for bh, bo, s, a in zip(boxes_h, boxes_o, scores, actions):
+            a_name = dataset.actions[a].split()
+            result = CacheTemplate(image_id=image_id, person_box=bh.tolist())
+            result[a_name[0] + '_agent'] = s.item()
+            result['_'.join(a_name)] = bo.tolist() + [s.item()]
+            all_results.append(result)
+
+    with open(os.path.join(cache_dir, 'vcoco_results.pkl'), 'wb') as f:
+        # Use protocol 2 for compatibility with Python2
+        pickle.dump(all_results, f, 2)
+
 def main(args):
     torch.cuda.set_device(0)
     torch.backends.cudnn.benchmark = False
@@ -97,28 +145,25 @@ def main(args):
     if not os.path.exists(args.cache_dir):
         os.makedirs(args.cache_dir)
 
-    with open(os.path.join(args.data_root, 'coco80tohico80.json'), 'r') as f:
-        coco2hico = json.load(f)
-
-    dataset = HICODet(
-        root=os.path.join(args.data_root,
-            "hico_20160224_det/images/{}".format(args.partition)),
-        anno_file=os.path.join(args.data_root,
-            "instances_{}.json".format(args.partition)),
-        target_transform=pocket.ops.ToTensor(input_format='dict')
-    )
     dataloader = DataLoader(
-        dataset=CustomisedDataset(dataset,
-            args.detection_dir,
-            human_idx=49,
+        dataset=DataFactory(
+            name=args.dataset, partition=args.partition,
+            data_root=args.data_root,
+            detection_root=args.detection_dir,
             box_score_thresh_h=args.human_thresh,
             box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=1,
         num_workers=args.num_workers, pin_memory=True
     )
 
+    if args.dataset == 'hicodet':
+        object_to_target = dataloader.dataset.dataset.object_to_verb
+        human_idx = 49
+    elif args.dataset == 'vcoco':
+        object_to_target = dataloader.dataset.dataset.object_to_action
+        human_idx = 1
     net = SpatioAttentiveGraph(
-        dataset.object_to_verb, 49,
+        object_to_target, human_idx,
         num_iterations=args.num_iter
     )
     if os.path.exists(args.model_path):
@@ -131,10 +176,16 @@ def main(args):
 
     net.cuda()
     
-    inference(net, dataloader, coco2hico, args.cache_dir)
+    if args.dataset == 'hicodet':
+        with open(os.path.join(args.data_root, 'coco80tohico80.json'), 'r') as f:
+            coco2hico = json.load(f)
+        inference_hicodet(net, dataloader, coco2hico, args.cache_dir)
+    elif args.dataset == 'vcoco':
+        inference_vcoco(net, dataloader, args.cache_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
+    parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--data-root', default='hicodet', type=str)
     parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
                         type=str, help="Directory where detection files are stored")
