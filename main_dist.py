@@ -87,7 +87,7 @@ def main(rank, args):
     for p in net.backbone.parameters():
         p.requires_grad = False
 
-    if os.path.exists(args.model_path):
+    if os.path.exists(args.checkpoint_path):
         print("Continue from saved checkpoint ", args.checkpoint_path)
         checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
         net.load_state_dict(checkpoint['model_state_dict'])
