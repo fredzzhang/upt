@@ -19,6 +19,20 @@ If you find this repository useful for your research, please kindly cite our pap
 }
 ```
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Data Utilities](#data-utilities)
+    * [HICO-DET](#hico-det)
+    * [V-COCO](#v-coco)
+- [Testing](#testing)
+    * [HICO-DET](#hico-det-1)
+    * [V-COCO](#v-coco-1)
+- [Training](#training)
+    * [HICO-DET](#hico-det-2)
+    * [V-COCO](#v-coco-2)
+- [Contact](#contact)
+
 ## Prerequisites
 
 1. Download the repository with `git clone https://github.com/fredzzhang/spatio-attentive-graphs`
