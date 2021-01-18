@@ -121,9 +121,9 @@ As a reference, the performance of the provided model is shown in the table belo
 |Detector|mAP (Full, Rare, Non-rare)|
 |:-|:-:|
 |Pre-trained on MS COCO|(`18.24`, `12.91`, `19.83`)|
-|Fine-tuned on HICO-DET ([VCL](https://github.com/zhihou7/VCL))|(`22.04`, `15.73`, `23.93`)|
+|Fine-tuned on HICO-DET ([VCL](https://drive.google.com/file/d/1QI1kcZJqI-ym6AGQ2swwp4CKb39uLf-4/view))|(`22.04`, `15.73`, `23.93`)|
 |Fine-tuned on HICO-DET ([This repo](https://github.com/fredzzhang/hicodet))|(`22.56`, `15.52`, `24.67`)|
-|Fine-tuned on HICO-DET ([DRG](https://github.com/vt-vl-lab/DRG))|(`28.54`, `21.10`, `30.77`)|
+|Fine-tuned on HICO-DET ([DRG](https://drive.google.com/file/d/18_6K2P6s9vMBWOvcNNQqUj2wfLhbvpLo/view))|(`28.54`, `21.10`, `30.77`)|
 |Ground truth detections|(`47.88`, `34.03`, `52.01`)|
 
 ### V-COCO
