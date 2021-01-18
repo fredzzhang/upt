@@ -27,7 +27,10 @@ from utils import DataFactory, custom_collate
 def inference_hicodet(net, dataloader, coco2hico, cache_dir):
     dataset = dataloader.dataset.dataset
     net.eval()
-    all_results = np.empty((600, 9658), dtype=object)
+
+    # Include empty images when counting
+    nimages = len(dataset.annotations)
+    all_results = np.empty((600, nimages), dtype=object)
 
     object2int = dataset.object_to_interaction
     for i, batch in enumerate(tqdm(dataloader)):
@@ -79,7 +82,7 @@ def inference_hicodet(net, dataloader, coco2hico, cache_dir):
 
     # Replace None with size (0,0) arrays
     for i in range(600):
-        for j in range(9658):
+        for j in range(nimages):
             if all_results[i, j] is None:
                 all_results[i, j] = np.zeros((0, 0))
     # Cache results
