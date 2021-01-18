@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 
 import pocket
 
+from hicodet.hicodet import HICODet
 from models import SpatioAttentiveGraph
 from utils import DataFactory, custom_collate, test
 
