@@ -182,4 +182,4 @@ CUDA_VISIBLE_DEVICES=0 python main.py --dataset vcoco --partitions trainval val 
 
 ## Contact
 
-If you have any questions or doubts, feel free to open an issue. Alternatively, you can contact me at frederic.zhang@anu.edu.au
+If you have any questions regarding our paper or the repo, please post them in [discussions](https://github.com/fredzzhang/spatio-attentive-graphs/discussions). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact me at frederic.zhang@anu.edu.au
