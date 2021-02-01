@@ -36,7 +36,7 @@ If you find this repository useful for your research, please kindly cite our pap
 ## Prerequisites
 
 1. Download the repository with `git clone https://github.com/fredzzhang/spatio-attentive-graphs`
-2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket)
+2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket) (use release v0.3 with PyTorch 1.1.0)
 3. Make sure the environment you created for Pocket is activated. You are good to go!
 
 ## Data Utilities
