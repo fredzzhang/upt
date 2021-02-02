@@ -88,7 +88,8 @@ def main(rank, args):
         p.requires_grad = False
 
     if os.path.exists(args.checkpoint_path):
-        print("Continue from saved checkpoint ", args.checkpoint_path)
+        print("=> Rank {}: continue from saved checkpoint".format(
+            rank), args.checkpoint_path)
         checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
         net.load_state_dict(checkpoint['model_state_dict'])
         optim_state_dict = checkpoint['optim_state_dict']
@@ -96,7 +97,7 @@ def main(rank, args):
         epoch = checkpoint['epoch']
         iteration = checkpoint['iteration']
     else:
-        print("Start from a randomly initialised model")
+        print("=> Rank {}: start from a randomly initialised model".format(rank))
         optim_state_dict = None
         sched_state_dict = None
         epoch = 0; iteration = 0
