@@ -124,8 +124,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight-decay', default=1e-4, type=float)
     parser.add_argument('--human-thresh', default=0.2, type=float)
     parser.add_argument('--object-thresh', default=0.2, type=float)
-    parser.add_argument('--max-human', default=10, type=int)
-    parser.add_argument('--max-object', default=10, type=int)
+    parser.add_argument('--max-human', default=15, type=int)
+    parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--batch-size', default=4, type=int,
                         help="Batch size for each subprocess")
     parser.add_argument('--lr-decay', default=0.1, type=float,
