@@ -167,7 +167,8 @@ def main(args):
         human_idx = 1
     net = SpatioAttentiveGraph(
         object_to_target, human_idx,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        max_human=args.max_human, max_object=args.max_object
     )
     if os.path.exists(args.model_path):
         print("Loading model from ", args.model_path)
@@ -198,6 +199,8 @@ if __name__ == "__main__":
                         help="Number of iterations to run message passing")
     parser.add_argument('--human-thresh', default=0.2, type=float)
     parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--max-human', default=10, type=int)
+    parser.add_argument('--max-object', default=10, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
     

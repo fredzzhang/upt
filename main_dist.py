@@ -80,8 +80,8 @@ def main(rank, args):
         num_classes = 24
     net = SpatioAttentiveGraph(
         object_to_target, human_idx,
-        num_iterations=args.num_iter,
-        postprocess=False
+        num_iterations=args.num_iter, postprocess=False,
+        max_human=args.max_human, max_object=args.max_object
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
@@ -150,6 +150,8 @@ if __name__ == '__main__':
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--human-thresh', default=0.2, type=float)
     parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--max-human', default=10, type=int)
+    parser.add_argument('--max-object', default=10, type=int)
     parser.add_argument('--milestones', nargs='+', default=[10,], type=int,
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=4, type=int)
