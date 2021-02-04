@@ -37,8 +37,11 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             self.max_size / max_size
         )
 
-        image = nn.functional.interpolate(image[None], 
-            scale_factor=scale_factor, mode='bilinear', align_corners=False)[0]
+        image = nn.functional.interpolate(
+            image[None], scale_factor=scale_factor,
+            mode='bilinear', align_corners=False,
+            recompute_scale_factor=True
+        )[0]
         if target is None:
             return image, target
 
