@@ -462,7 +462,7 @@ class GraphHead(nn.Module):
         if self.training:
             assert targets is not None, "Targets should be passed during training"
 
-        global_features = self.avg_pool(features[3]).flatten(start_dim=1)
+        global_features = self.avg_pool(features['3']).flatten(start_dim=1)
         box_features = self.box_head(box_features)
 
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
@@ -509,7 +509,7 @@ class GraphHead(nn.Module):
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n_h, n, -1)
 
             adjacency_matrix = torch.ones(n_h, n, device=device)
-            for i in range(self.num_iter):
+            for _ in range(self.num_iter):
                 # Compute weights of each edge
                 weights = self.attention_head(
                     torch.cat([

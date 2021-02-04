@@ -117,7 +117,7 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             pretrained=pretrained).backbone
 
         box_roi_pool = MultiScaleRoIAlign(
-            featmap_names=[0, 1, 2, 3],
+            featmap_names=['0', '1', '2', '3'],
             output_size=output_size,
             sampling_ratio=sampling_ratio
         )
