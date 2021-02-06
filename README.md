@@ -105,26 +105,26 @@ bash download_checkpoint.sh
 2. Test a model
 ```bash
 cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0 python test.py --model-path checkpoints/spatio-attentive-graph-hicodet-e11.pt
+CUDA_VISIBLE_DEVICES=0 python test.py --model-path checkpoints/weights-hicodet-b32h16e11.pt
 ```
 By default, detections from a pre-trained detector is used. To change sources of detections, use the argument `--detection-dir`, e.g. `--detection-dir hicodet/detections/test2015_gt` to select ground truth detections. Fine-tuned detections (if you downloaded them) are available under `hicodet/detections`.
 
 3. Cache detections for Matlab evaluation following [HO-RCNN](https://github.com/ywchao/ho-rcnn) (optional)
 ```bash
 cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0 python cache.py --model-path checkpoints/spatio-attentive-graph-hicodet-e11.pt
+CUDA_VISIBLE_DEVICES=0 python cache.py --model-path checkpoints/weights-hicodet-b32h16e11.pt
 ```
 By default, 80 `.mat` files, one for each object class, will be cached in a directory named `matlab`. Use the `--cache-dir` argument to change the cache directory. To change sources of detections, refer to the use of `--detection-dir` in the previous section.
 
 As a reference, the performance of the provided model is shown in the table below
 
-|Detector|mAP (Full, Rare, Non-rare)|
-|:-|:-:|
-|Pre-trained on MS COCO|(`18.24`, `12.91`, `19.83`)|
-|Fine-tuned on HICO-DET ([VCL](https://drive.google.com/file/d/1QI1kcZJqI-ym6AGQ2swwp4CKb39uLf-4/view))|(`22.04`, `15.73`, `23.93`)|
-|Fine-tuned on HICO-DET ([This repo](https://github.com/fredzzhang/hicodet))|(`22.56`, `15.52`, `24.67`)|
-|Fine-tuned on HICO-DET ([DRG](https://drive.google.com/file/d/18_6K2P6s9vMBWOvcNNQqUj2wfLhbvpLo/view))|(`28.54`, `21.10`, `30.77`)|
-|Ground truth detections|(`47.88`, `34.03`, `52.01`)|
+|Detections|Default Setting|Known Object Setting|
+|:-|:-:|:-:|
+|Pre-trained on MS COCO|(`19.39`, `15.05`, `20.68`)|(`22.71`, `17.72`, `24.20`)|
+|Fine-tuned on HICO-DET ([VCL](https://drive.google.com/file/d/1QI1kcZJqI-ym6AGQ2swwp4CKb39uLf-4/view))|(`22.61`, `16.30`, `24.49`)|(`25.11`, `18.05`, `27.22`)|
+|Fine-tuned on HICO-DET ([This repo](https://github.com/fredzzhang/hicodet))|(`23.57`, `16.93`, `25.55`)|(`26.48`, `18.79`, `28.77`)|
+|Fine-tuned on HICO-DET ([DRG](https://drive.google.com/file/d/18_6K2P6s9vMBWOvcNNQqUj2wfLhbvpLo/view))|(`29.55`, `22.61`, `31.62`)|(`31.92`, `24.24`, `34.21`)|
+|Ground truth detections|(`49.26`, `35.82`, `53.27`)|(`49.40`, `35.85`, `53.45`)|
 
 ### V-COCO
 
@@ -157,27 +157,31 @@ You can either add it into the evaluation code or save it as a seperate file to 
 
 ## Training
 ### HICO-DET
-1. Training with a single GPU (recommended)
+1. Training with `DistributedDataParallel` (_recommended_)
+```bash
+cd /path/to/spatio-attentive-graphs
+python main_dist.py --world-size 8 --learning-rate 0.008 --print-interval 300 &>log &
+```
+Specify the number of GPUs to use with the argument `--world-size`. The default batch size is `4` (per GPU). The provided model was trained with 8 GPUs, with an effective batch size of `32`. __Reducing the effective batch size could result in slightly inferior performance__. The default learning rate for batch size of 4 is `0.001`. As a rule of thumb, multiply that by the same factor by which batch size has been increased, e.g. `0.008` for batch size of `32`. It is recommended to redirect `stdout` and `stderr` to a file to save the training log (as indicated by `&>log`). To check the progress, run `cat log | grep mAP`, or alternatively you can go through the log with `vim log`. Also, the mAP logged follows a slightly different protocol. It does __NOT__ necessarily correlate with the mAP that the community reports. It only serves as a diagnostic tool. The true performance of the model requires running a seperate test as shown in the previous section. By default, checkpoints will be saved under `checkpoints` in the current directory. For more arguments, run `python main_dist.py --help` to find out. We follow the early stopping training strategy, and have concluded (using a validation set split from the training set) that the model at epoch `11` should be picked.
+
+2. Training with a single GPU (_inferior performance_)
 ```bash
 cd /path/to/spatio-attentive-graphs
 CUDA_VISIBLE_DEVICES=0 python main.py &>log &
 ```
-Note that setting the environmental variable `CUDA_VISIBLE_DEVICES` is necessary and should __NOT__ be omitted, due to the design of the used learning engine. It is recommended to redirect `stdout` and `stderr` to a file to save the training log (as indicated by `&>log`). To check the progress, run `cat log | grep mAP`, or alternatively you can go through the log with `vim log`. Also, the mAP logged follows a slightly different protocol. It does __NOT__ necessarily correlate with the mAP that the community reports. It only serves as a diagnostic tool. The true performance of the model requires running a seperate test as shown in the previous section. The training process takes about 48 hrs on a single GeForce GTX TITAN X device. Therefore it is recommended to run the script asynchronously (as indicated by `&`). By default, checkpoints will be saved under `checkpoints` in the current directory. For more arguments, run `python main.py --help` to find out. We follow the early stopping training strategy, and have concluded (using a validation set split from the training set) that the model at epoch `11` should be picked.
-
-2. Training with `DistributedDataParallel` (not fully tested)
-```bash
-cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0,1,2,3 python main_dist.py --world-size 4 --learning-rate 0.004 &>log &
-```
-Specify the number of GPUs with the argument `--world-size`, which should be no larger than the number of GPUs specified by `CUDA_VISIBLE_DEVICES`. The default learning rate for a single GPU is `0.001`. As a rule of thumb, multiply that by the number of GPUs during training. For more arguments, run `python main_dist.py --help` to find out.
+Note that setting the environmental variable `CUDA_VISIBLE_DEVICES` is necessary and should __NOT__ be omitted, due to the design of the used learning engine. The training process takes about 40 hrs on a single GeForce GTX TITAN X device. Therefore it is recommended to run the script asynchronously (as indicated by `&`). For more arguments, run `python main.py --help` to find out.
 
 ### V-COCO
 We have incorporated V-COCO dataset into the training pipeline. Only a few arguments need to be modified to train on V-COCO.
 
 ```bash
 cd /path/to/spatio-attentive-graphs
-# Training with a single GPU (recommended)
-CUDA_VISIBLE_DEVICES=0 python main.py --dataset vcoco --partitions trainval val --data-root vcoco --train-detection-dir vcoco/detections/trainval --val-detection-dir vcoco/detections/trainval --print-interval 200 --cache-dir checkpoints/vcoco &>log &
+# Training with DDP (recommended)
+python main_dist.py --dataset vcoco --partitions trainval val --data-root vcoco \
+    --train-detection-dir vcoco/detections/trainval \
+    --val-detection-dir vcoco/detections/trainval \
+    --learning-rate 0.008 --world-size 8
+    --print-interval 20 --cache-dir checkpoints/vcoco &>log &
 ```
 
 ## Contact
