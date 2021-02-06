@@ -1,8 +1,8 @@
 #!/bin/bash
 
 DIR=../checkpoints
-FILE=spatio-attentive-graphs-hicodet-e11.pt
-ID=1tAkqKx_IIcV_IOxKKE8QYTBZLvEqsZYX
+FILE=weights-hicodet-b32h16e11.pt
+ID=1giZODneEPb5AYQZPzltQEkSRzzRW8Bpj
 
 if [ ! -d $DIR ]; then
    mkdir $DIR
