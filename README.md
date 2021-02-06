@@ -132,7 +132,10 @@ We did not implement evaluation utilities for V-COCO, and instead use the [utili
 
 ```bash
 cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0 python cache.py --dataset vcoco --data-root vcoco --detection-dir vcoco/detections/test --cache-dir vcoco_cache --partition test --model-path /path/to/a/model
+CUDA_VISIBLE_DEVICES=0 python cache.py --dataset vcoco --data-root vcoco \
+    --detection-dir vcoco/detections/test \
+    --cache-dir vcoco_cache --partition test \
+    --model-path /path/to/a/model
 ```
 
 This will generate a file named `vcoco_results.pkl` under `vcoco_cache` in the current directory. Please refer to the [v-coco](https://github.com/s-gupta/v-coco) repo (not to be confused with [vcoco](https://github.com/fredzzhang/vcoco), the submodule) for further instructions. __Note__ that loading the pickle file requires a particular class `CacheTemplate`, which is shown below in its entirety.
@@ -180,7 +183,7 @@ cd /path/to/spatio-attentive-graphs
 python main_dist.py --dataset vcoco --partitions trainval val --data-root vcoco \
     --train-detection-dir vcoco/detections/trainval \
     --val-detection-dir vcoco/detections/trainval \
-    --learning-rate 0.008 --world-size 8
+    --learning-rate 0.008 --world-size 8 \
     --print-interval 20 --cache-dir checkpoints/vcoco &>log &
 ```
 
