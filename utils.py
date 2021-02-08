@@ -265,6 +265,12 @@ class CustomisedDLE(DistributedLearningEngine):
     def _on_start(self):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
 
+    def _on_start_epoch(self):
+        """Override method to correctly access asmpler"""
+        self._state.epoch += 1
+        self._state.net.train()
+        self._train_loader.batch_sampler.sampler.set_epoch(self._state.epoch)
+
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
         output = self._state.net(
