@@ -9,6 +9,7 @@ Australian Centre for Robotic Vision
 
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
 import torchvision.ops.boxes as box_ops
 
 from torch import nn
@@ -42,7 +43,8 @@ class InteractionHead(nn.Module):
                 num_classes,
                 box_nms_thresh=0.5,
                 max_human=10,
-                max_object=10
+                max_object=10,
+                distributed=False
                 ):
         
         super().__init__()
@@ -57,6 +59,7 @@ class InteractionHead(nn.Module):
 
         self.max_human = max_human
         self.max_object = max_object
+        self.distributed = distributed
 
     def preprocess(self, detections, targets, append_gt=None):
         """
@@ -135,8 +138,12 @@ class InteractionHead(nn.Module):
 
         labels = torch.cat(labels)
         n_p = len(torch.nonzero(labels))
-        if n_p == 0:
-            n_p = 1
+        if self.distributed:
+            world_size = dist.get_world_size()
+            n_p = torch.as_tensor([n_p], device='cuda')
+            dist.barrier()
+            dist.all_reduce(n_p)
+            n_p = (n_p / world_size).item()
         loss = binary_focal_loss(
             torch.cat(scores), labels, reduction='sum', gamma=0.5
         )
