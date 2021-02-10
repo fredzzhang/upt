@@ -81,7 +81,8 @@ def main(rank, args):
     net = SpatioAttentiveGraph(
         object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter, postprocess=False,
-        max_human=args.max_human, max_object=args.max_object
+        max_human=args.max_human, max_object=args.max_object,
+        distributed=True
     )
     # Fix backbone parameters
     for p in net.backbone.parameters():
