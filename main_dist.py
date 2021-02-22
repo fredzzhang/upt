@@ -107,23 +107,20 @@ def main(rank, args):
         train_loader,
         val_loader,
         num_classes=num_classes,
-        optim_params={
-            'lr': args.learning_rate,
-            'momentum': args.momentum,
-            'weight_decay': args.weight_decay
-        },
-        optim_state_dict=optim_state_dict,
-        lr_scheduler=True,
-        lr_sched_params={
-            'milestones': args.milestones,
-            'gamma': args.lr_decay
-        },
         print_interval=args.print_interval,
         cache_dir=args.cache_dir
     )
+    net_params = [
+        p for p in engine.fetch_state_key('net').parameters()
+        if p.requires_grad
+    ]
+    optim = torch.optim.AdamW(
+        net_params,
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay
+    )
+    engine.update_state_key(optimizer=optim)
     engine.update_state_key(epoch=epoch, iteration=iteration)
-    if sched_state_dict is not None:
-        engine.fetch_state_key('lr_scheduler').load_state_dict(sched_state_dict)
 
     engine(args.num_epochs)
 
