@@ -103,6 +103,7 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             num_classes=117,
             fg_iou_thresh=0.5,
             num_iterations=1,
+            distributed=False,
             # Transformation parameters
             min_size=800, max_size=1333,
             image_mean=None, image_std=None,
@@ -144,7 +145,8 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
             max_human=max_human,
-            max_object=max_object
+            max_object=max_object,
+            distributed=distributed
         )
 
         if image_mean is None:
