@@ -120,7 +120,10 @@ def main(rank, args):
         lr=args.learning_rate,
         weight_decay=args.weight_decay
     )
-    engine.update_state_key(optimizer=optim)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optim, milestones=args.milestones, gamma=args.lr_decay
+    )
+    engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
     engine.update_state_key(epoch=epoch, iteration=iteration)
 
     engine(args.num_epochs)
