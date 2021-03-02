@@ -7,6 +7,7 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
+import json
 import torch
 import torch.nn.functional as F
 import torch.distributed as dist
@@ -37,11 +38,14 @@ class InteractionHead(nn.Module):
     """
     def __init__(self,
                 box_roi_pool,
+                box_head,
+                cls_head,
                 box_pair_head,
                 box_pair_predictor,
                 human_idx,
                 num_classes,
                 box_nms_thresh=0.5,
+                box_score_thresh=0.2,
                 max_human=10,
                 max_object=10,
                 distributed=False
@@ -50,81 +54,126 @@ class InteractionHead(nn.Module):
         super().__init__()
 
         self.box_roi_pool = box_roi_pool
+        self.box_head = box_head
+        self.cls_head = cls_head
         self.box_pair_head = box_pair_head
         self.box_pair_predictor = box_pair_predictor
 
         self.num_classes = num_classes
         self.human_idx = human_idx
         self.box_nms_thresh = box_nms_thresh
+        self.box_score_thresh = box_score_thresh
 
         self.max_human = max_human
         self.max_object = max_object
         self.distributed = distributed
 
-    def preprocess(self, detections, targets, append_gt=None):
-        """
-        detections(list[dict]): Object detections with following keys 
-            "boxes": Tensor[N, 4]
-            "labels": Tensor[N] 
-            "scores": Tensor[N]
-        targets(list[dict]): Targets with the following keys
-            "boxes_h" Tensor[L, 4]
-            "boxes_o": Tensor[L, 4]
-            "object": Tensor[L] Object class index
-        append_gt(bool): If True, ground truth box pairs will be appended into the
-            box list. If None, it will be overriden as the training flag
-        """
-        results = []
-        for b_idx, detection in enumerate(detections):
-            boxes = detection['boxes']
-            labels = detection['labels']
-            scores = detection['scores']
+        with open('./hicodet/coco80tohico80.json', 'r') as f:
+            conversion = json.load(f)
+        # Denote background class with index 80, which should throw
+        # an index error if the prediction was somehow not removed
+        conversion = torch.as_tensor(
+            [80,] + list(conversion.values())
+        )
+        # Reverse the conversion
+        idx = torch.argsort(conversion)
+        self.conversion = torch.arange(81)[idx].tolist()
 
-            # Append ground truth during training
-            if append_gt is None:
-                append_gt = self.training
-            if append_gt:
-                target = targets[b_idx]
-                n = target["boxes_h"].shape[0]
-                boxes = torch.cat([target["boxes_h"], target["boxes_o"], boxes])
-                scores = torch.cat([torch.ones(2 * n, device=scores.device), scores])
-                labels = torch.cat([
-                    self.human_idx * torch.ones(n, device=labels.device).long(),
-                    target["object"],
-                    labels
-                ])
+    def append_ground_truth(self, box_coords, targets):
+        """
+        Parameters:
+            box_coords: List[Tensor]
+            targets: List[dict]
+        """
+        augmented_boxes = []
+        for c, t in zip(box_coords, targets):
+            boxes = torch.cat([
+                c, t['boxes_h'], t['boxes_o']
+            ], dim=0)
+            augmented_boxes.append(boxes)
 
+        return augmented_boxes
+
+    def preprocess(self, box_coords, box_scores):
+        """
+        box_coords: List[Tensor]
+        box_scores: Tensor
+        """
+        return_coords = []
+        return_scores = []
+        return_labels = []
+        return_idx = []
+
+        counter = 0
+        for boxes in box_coords:
+            n = boxes.shape[0]
+            scores, labels = torch.max(
+                box_scores[counter: counter + n, :], dim=1
+            )
+            counter += n
+            # Remove background predictions and low scoring examples
+            active_idx = torch.nonzero(
+                torch.logical_and(labels != 80,
+                scores >= self.box_score_thresh
+            )).squeeze(1)
             # Class-wise non-maximum suppression
             keep_idx = box_ops.batched_nms(
-                boxes, scores, labels,
+                boxes[active_idx],
+                scores[active_idx],
+                labels[active_idx],
                 self.box_nms_thresh
             )
-            boxes = boxes[keep_idx].view(-1, 4)
-            scores = scores[keep_idx].view(-1)
-            labels = labels[keep_idx].view(-1)
-
+            active_idx = active_idx[keep_idx]
             # Sort detections by scores
-            sorted_idx = torch.argsort(scores, descending=True)
-            boxes = boxes[sorted_idx]
-            scores = scores[sorted_idx]
-            labels = labels[sorted_idx]
+            sorted_idx = torch.argsort(scores[active_idx], descending=True)
+            active_idx = active_idx[sorted_idx]
             # Keep a fixed number of detections
-            h_idx = torch.nonzero(labels == self.human_idx).squeeze(1)
-            o_idx = torch.nonzero(labels != self.human_idx).squeeze(1)
+            h_idx = torch.nonzero(labels[active_idx] == self.human_idx).squeeze(1)
+            o_idx = torch.nonzero(labels[active_idx] != self.human_idx).squeeze(1)
             if len(h_idx) > self.max_human:
                 h_idx = h_idx[:self.max_human]
             if len(o_idx) > self.max_object:
                 o_idx = o_idx[:self.max_object]
             # Permute humans to the top
             keep_idx = torch.cat([h_idx, o_idx])
+            active_idx = active_idx[keep_idx]
 
-            results.append(dict(
-                boxes=boxes[keep_idx].view(-1, 4),
-                labels=labels[keep_idx].view(-1),
-                scores=scores[keep_idx].view(-1)
-            ))
+            return_coords.append(boxes[active_idx].view(-1, 4))
+            return_scores.append(scores[active_idx].view(-1))
+            return_labels.append(labels[active_idx].view(-1))
+            return_idx.append(active_idx)
 
-        return results
+        return return_coords, return_scores, return_labels, return_idx
+
+    def compute_object_classification_loss(self, boxes, logits, targets):
+        labels = []
+        for b, t in zip(boxes, targets):
+            gt_boxes = torch.cat([
+                t['boxes_h'],
+                t['boxes_o']
+            ])
+            gt_classes = torch.cat([
+                torch.ones_like(t['object']) * self.human_idx,
+                t['object']
+            ])
+            # Set the default class to background
+            l = 80 * torch.ones(len(b), dtype=torch.int64, device=b.device)
+            
+            iou = box_ops.box_iou(b, gt_boxes)
+            max_iou, gt_idx = torch.max(iou, dim=1)
+            match = torch.nonzero(
+                max_iou >= self.box_pair_head.fg_iou_thresh
+            ).squeeze()
+            l[match] = gt_classes[gt_idx[match]]
+
+            labels.append(l)
+
+        logits = torch.cat(logits)
+        labels = torch.cat(labels)
+
+        loss = F.cross_entropy(logits, labels)
+
+        return loss
 
     def compute_interaction_classification_loss(self, results):
         """
@@ -187,7 +236,8 @@ class InteractionHead(nn.Module):
             result_dict = dict(
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
-                scores=s[x, y] * p[x, y], object=o,
+                scores=s[x, y] * p[x, y],
+                object=o, prior=p[x, y]
             )
             # If binary labels are provided
             if len(l):
@@ -222,15 +272,29 @@ class InteractionHead(nn.Module):
                     zero otherwise. This is only returned when targets are given
             During training, the classification loss is appended to the end of the list
         """
-        if self.training:
-            assert targets is not None, "Targets should be passed during training"
-        detections = self.preprocess(detections, targets)
-
         box_coords = [detection['boxes'] for detection in detections]
-        box_labels = [detection['labels'] for detection in detections]
-        box_scores = [detection['scores'] for detection in detections]
+        if self.training:
+            assert targets is not None, "Targets should be passed during training."
+            box_coords = self.append_ground_truth(box_coords, targets)
 
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
+        box_features = box_features.flatten(start_dim=1)
+        box_features = self.box_head(box_features)
+        box_logits = self.cls_head(box_features)
+        # Re-arrange object classes in HICO standard
+        box_logits = box_logits[:, self.conversion]
+        box_scores = F.softmax(box_logits, dim=1).detach()
+
+        n_boxes = [c.shape[0] for c in box_coords]
+        box_logits = box_logits.split(n_boxes)
+        box_features = box_features.split(n_boxes)
+
+        box_coords, box_scores, box_labels, active_idx = self.preprocess(
+            box_coords, box_scores
+        )
+        # Update box features and logits
+        box_logits = [l[idx] for l, idx in zip(box_logits, active_idx)]
+        box_features = [f[idx] for f, idx in zip(box_features, active_idx)]
 
         box_pair_features, boxes_h, boxes_o, object_class,\
         box_pair_labels, box_pair_prior = self.box_pair_head(
@@ -254,9 +318,12 @@ class InteractionHead(nn.Module):
             return None
 
         if self.training:
-            results.append(
-                self.compute_interaction_classification_loss(results)
+            loss_dict = dict(
+                hoi_loss=self.compute_interaction_classification_loss(results),
+                object_loss=self.compute_object_classification_loss(
+                    box_coords, box_logits, targets)
             )
+            results.append(loss_dict)
 
         return results
 
@@ -445,11 +512,14 @@ class GraphHead(nn.Module):
 
         return prior
 
-    def forward(self, features, image_shapes, box_features, box_coords, box_labels, box_scores, targets=None):
+    def forward(self,
+        features, image_shapes, box_features, box_coords,
+        box_labels, box_scores, targets=None
+    ):
         """
         Arguments:
             features(OrderedDict[Tensor]): Image pyramid with different levels
-            box_features(Tensor[M, R])
+            box_features(List[Tensor])
             image_shapes(List[Tuple[height, width]])
             box_coords(List[Tensor])
             box_labels(List[Tensor])
@@ -470,17 +540,16 @@ class GraphHead(nn.Module):
             assert targets is not None, "Targets should be passed during training"
 
         global_features = self.avg_pool(features['3']).flatten(start_dim=1)
-        box_features = self.box_head(box_features)
-
-        num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
         
         counter = 0
         all_boxes_h = []; all_boxes_o = []; all_object_class = []
         all_labels = []; all_prior = []
         all_box_pair_features = []
-        for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
-            n = num_boxes[b_idx]
-            device = box_features.device
+        for b_idx, (coords, labels, scores, features) in enumerate(
+            zip(box_coords, box_labels, box_scores, box_features)
+        ):
+            n = coords.shape[0]
+            device = features.device
 
             n_h = torch.sum(labels == self.human_idx).item()
             # Skip image when there are no detected human or object instances
@@ -488,9 +557,9 @@ class GraphHead(nn.Module):
             if n_h == 0 or n <= 1:
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
-                raise AssertionError("Human detections are not permuted to the top")
+                raise ValueError("Human detections are not permuted to the top")
 
-            node_encodings = box_features[counter: counter+n]
+            node_encodings = features
             # Duplicate human nodes
             h_node_encodings = node_encodings[:n_h]
             # Get the pairwise index between every human and object instance
@@ -571,10 +640,12 @@ class GraphHead(nn.Module):
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
             # The prior score is the product of the pre-computed object detection scores with LIS
-            all_prior.append(
-                self.compute_prior_scores(x_keep, y_keep, scores, labels)
+            all_prior.append(self.compute_prior_scores(
+                x_keep, y_keep,
+                scores.detach(), labels)
             )
 
             counter += n
 
-        return all_box_pair_features, all_boxes_h, all_boxes_o, all_object_class, all_labels, all_prior
+        return all_box_pair_features, all_boxes_h, all_boxes_o, \
+            all_object_class, all_labels, all_prior
