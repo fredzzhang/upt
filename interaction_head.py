@@ -103,7 +103,8 @@ class InteractionHead(nn.Module):
         return_scores = []
         return_labels = []
         return_idx = []
-
+        # Remove scores predicted for the background class
+        box_scores = box_scores[:, :-1]
         counter = 0
         for boxes in box_coords:
             n = boxes.shape[0]
@@ -113,9 +114,8 @@ class InteractionHead(nn.Module):
             counter += n
             # Remove background predictions and low scoring examples
             active_idx = torch.nonzero(
-                torch.logical_and(labels != 80,
                 scores >= self.box_score_thresh
-            )).squeeze(1)
+            ).squeeze(1)
             # Class-wise non-maximum suppression
             keep_idx = box_ops.batched_nms(
                 boxes[active_idx],
