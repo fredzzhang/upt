@@ -232,8 +232,6 @@ class InteractionHead(nn.Module):
         ):
             # Keep valid classes
             x, y = torch.nonzero(p).unbind(1)
-            if len(x) == 0:
-                continue
 
             result_dict = dict(
                 boxes_h=b_h, boxes_o=b_o,
@@ -316,8 +314,6 @@ class InteractionHead(nn.Module):
             logits, box_pair_prior, boxes_h, boxes_o,
             object_class, box_pair_labels
         )
-        if len(results) == 0:
-            return None
 
         if self.training:
             loss_dict = dict(
