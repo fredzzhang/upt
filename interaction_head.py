@@ -45,7 +45,7 @@ class InteractionHead(nn.Module):
                 human_idx,
                 num_classes,
                 box_nms_thresh=0.5,
-                box_score_thresh=0.2,
+                box_score_thresh=0.05,
                 max_human=10,
                 max_object=10,
                 distributed=False
