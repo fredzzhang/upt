@@ -148,6 +148,8 @@ class InteractionHead(nn.Module):
     def compute_object_classification_loss(self, boxes, logits, targets):
         labels = []
         for b, t in zip(boxes, targets):
+            if len(b) == 0:
+                continue
             gt_boxes = torch.cat([
                 t['boxes_h'],
                 t['boxes_o']
