@@ -269,6 +269,8 @@ class CustomisedDLE(DistributedLearningEngine):
         self._state.optimizer.zero_grad()
         output = self._state.net(
             *self._state.inputs, targets=self._state.targets)
+        if output is None:
+            return
         loss_dict = output.pop()
         self._state.loss = sum(loss for loss in loss_dict.values())
         self._state.loss.backward()
