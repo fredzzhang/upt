@@ -413,15 +413,6 @@ class GraphHead(nn.Module):
         self.fg_iou_thresh = fg_iou_thresh
         self.num_iter = num_iter
 
-        # Box head to map RoI features to low dimensional
-        self.box_head = nn.Sequential(
-            Flatten(start_dim=1),
-            nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
-            nn.ReLU(),
-            nn.Linear(node_encoding_size, node_encoding_size),
-            nn.ReLU()
-        )
-
         # Compute adjacency matrix
         self.adjacency = nn.Linear(representation_size, 1)
 
