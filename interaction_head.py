@@ -37,19 +37,19 @@ class InteractionHead(nn.Module):
         box_nms_thresh(float): NMS threshold
     """
     def __init__(self,
-                box_roi_pool,
-                box_head,
-                cls_head,
-                box_pair_head,
-                box_pair_predictor,
-                human_idx,
-                num_classes,
-                box_nms_thresh=0.5,
-                box_score_thresh=0.05,
-                max_human=10,
-                max_object=10,
-                distributed=False
-                ):
+        # Network components
+        box_roi_pool, box_head, cls_head,
+        box_pair_head, box_pair_predictor,
+        # Dataset properties
+        human_idx, num_classes,
+        # Hyperparameters
+        box_nms_thresh=0.5,
+        box_score_thresh=0.8,
+        box_score_thresh_training=0.2,
+        max_human=15, max_object=15,
+        # Misc
+        distributed=False
+    ):
         
         super().__init__()
 
@@ -63,6 +63,7 @@ class InteractionHead(nn.Module):
         self.human_idx = human_idx
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
+        self.box_score_thresh_training = box_score_thresh_training
 
         self.max_human = max_human
         self.max_object = max_object
@@ -98,11 +99,12 @@ class InteractionHead(nn.Module):
         """
         box_coords: List[Tensor]
         box_scores: Tensor
+        num_gt_boxes: List[int]
         """
-        return_coords = []
         return_scores = []
         return_labels = []
         return_idx = []
+        return_training_idx = []
         # Remove scores predicted for the background class
         box_scores = box_scores[:, :-1]
         counter = 0
@@ -114,17 +116,20 @@ class InteractionHead(nn.Module):
             counter += n
             # Clamp the scores of the ground truth boxes to keep them in
             scores[:n_gt].clamp_(min=self.box_score_thresh)
-            # Remove low scoring examples
-            active_idx = torch.nonzero(
-                scores >= self.box_score_thresh
-            ).squeeze(1)
             # Class-wise non-maximum suppression
-            keep_idx = box_ops.batched_nms(
-                boxes[active_idx],
-                scores[active_idx],
-                labels[active_idx],
+            active_idx = box_ops.batched_nms(
+                boxes, scores, labels,
                 self.box_nms_thresh
             )
+            # Remove low scoring examples to train the box classification head
+            keep_idx = torch.nonzero(
+                scores[active_idx] >= self.box_score_thresh_training
+            ).squeeze(1)
+            return_training_idx.append(active_idx[keep_idx])
+            # Remove low scoring examples
+            keep_idx = torch.nonzero(
+                scores[active_idx] >= self.box_score_thresh
+            ).squeeze(1)
             active_idx = active_idx[keep_idx]
             # Sort detections by scores
             sorted_idx = torch.argsort(scores[active_idx], descending=True)
@@ -140,12 +145,11 @@ class InteractionHead(nn.Module):
             keep_idx = torch.cat([h_idx, o_idx])
             active_idx = active_idx[keep_idx]
 
-            return_coords.append(boxes[active_idx].view(-1, 4))
             return_scores.append(scores[active_idx].view(-1))
             return_labels.append(labels[active_idx].view(-1))
             return_idx.append(active_idx)
 
-        return return_coords, return_scores, return_labels, return_idx
+        return return_scores, return_labels, return_idx, return_training_idx
 
     def compute_object_classification_loss(self, boxes, logits, targets):
         labels = []
@@ -294,17 +298,31 @@ class InteractionHead(nn.Module):
         box_logits = box_logits.split(n_boxes)
         box_features = box_features.split(n_boxes)
 
-        box_coords, box_scores, box_labels, active_idx = self.preprocess(
+        box_scores, box_labels, active_idx, active_idx_object_head = self.preprocess(
             box_coords, box_scores, num_gt_boxes
         )
         # Update box features and logits
-        box_logits = [l[idx] for l, idx in zip(box_logits, active_idx)]
-        box_features = [f[idx] for f, idx in zip(box_features, active_idx)]
+        box_logits = [
+            l[idx] for l, idx
+            in zip(box_logits, active_idx_object_head)
+        ]
+        box_coords_object_head = [
+            c[idx] for c, idx
+            in zip(box_coords, active_idx_object_head)
+        ]
+        box_coords_for_pairs = [
+            c[idx] for c, idx
+            in zip(box_coords, active_idx)
+        ]
+        box_features = [
+            f[idx] for f, idx
+            in zip(box_features, active_idx)
+        ]
 
         box_pair_features, boxes_h, boxes_o, object_class,\
         box_pair_labels, box_pair_prior = self.box_pair_head(
             features, image_shapes, box_features,
-            box_coords, box_labels, box_scores, targets
+            box_coords_for_pairs, box_labels, box_scores, targets
         )
 
         box_pair_features = torch.cat(box_pair_features)
@@ -319,7 +337,7 @@ class InteractionHead(nn.Module):
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
                 object_loss=self.compute_object_classification_loss(
-                    box_coords, box_logits, targets)
+                    box_coords_object_head, box_logits, targets)
             )
             results.append(loss_dict)
 
