@@ -226,7 +226,7 @@ class InteractionHead(nn.Module):
         scores = torch.sigmoid(logits)
         scores = scores.split(num_boxes)
         if len(labels) == 0:
-            labels = [[] for _ in range(len(num_boxes))]
+            labels = [None for _ in range(len(num_boxes))]
 
         results = []
         for s, p, b_h, b_o, o, l in zip(
@@ -242,7 +242,7 @@ class InteractionHead(nn.Module):
                 object=o, prior=p[x, y]
             )
             # If binary labels are provided
-            if len(l):
+            if l is not None:
                 result_dict["labels"] = l[x, y]
 
             results.append(result_dict)
@@ -307,12 +307,7 @@ class InteractionHead(nn.Module):
             box_coords, box_labels, box_scores, targets
         )
 
-        # No valid human-object pairs were formed
-        if len(box_pair_features) == 0:
-            return None
-        else:
-            box_pair_features = torch.cat(box_pair_features)
-
+        box_pair_features = torch.cat(box_pair_features)
         logits = self.box_pair_predictor(box_pair_features)
 
         results = self.postprocess(
@@ -549,6 +544,15 @@ class GraphHead(nn.Module):
             # Skip image when there are no detected human or object instances
             # and when there is only one detected instance
             if n_h == 0 or n <= 1:
+                all_box_pair_features.append(torch.zeros(
+                    0, 2 * self.representation_size,
+                    device=device)
+                )
+                all_boxes_h.append(torch.zeros(0, 4, device=device))
+                all_boxes_o.append(torch.zeros(0, 4, device=device))
+                all_object_class.append(torch.zeros(0, device=device))
+                all_prior.append(torch.zeros(0, self.num_cls, device=device))
+                all_labels.append(torch.zeros(0, self.num_cls, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
