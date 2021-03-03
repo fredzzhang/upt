@@ -101,6 +101,8 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             node_encoding_size=1024,
             representation_size=1024,
             num_classes=117,
+            box_score_thresh=0.5,
+            box_score_thresh_training=0.2,
             fg_iou_thresh=0.5,
             num_iterations=1,
             distributed=False,
@@ -149,6 +151,8 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             num_classes=num_classes,
             human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
+            box_score_thresh=box_score_thresh,
+            box_score_thresh_training=box_score_thresh_training,
             max_human=max_human,
             max_object=max_object,
             distributed=distributed

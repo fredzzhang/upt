@@ -34,17 +34,13 @@ def main(rank, args):
         name=args.dataset, partition=args.partitions[0],
         data_root=args.data_root,
         detection_root=args.train_detection_dir,
-        box_score_thresh_h=args.human_thresh,
-        box_score_thresh_o=args.object_thresh,
         flip=True
     )
 
     valset = DataFactory(
         name=args.dataset, partition=args.partitions[1],
         data_root=args.data_root,
-        detection_root=args.val_detection_dir,
-        box_score_thresh_h=args.human_thresh,
-        box_score_thresh_o=args.object_thresh
+        detection_root=args.val_detection_dir
     )
 
     train_loader = DataLoader(
@@ -82,6 +78,8 @@ def main(rank, args):
         object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter, postprocess=False,
         max_human=args.max_human, max_object=args.max_object,
+        box_score_thresh=args.box_thresh,
+        box_score_thresh_training=args.box_thresh_training,
         distributed=True
     )
     # Fix backbone parameters
@@ -149,8 +147,8 @@ if __name__ == '__main__':
                         help="Batch size for each subprocess")
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
-    parser.add_argument('--human-thresh', default=0.2, type=float)
-    parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--box-thresh-training', default=0.2, type=float)
+    parser.add_argument('--box-thresh', default=0.5, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--milestones', nargs='+', default=[10,], type=int,
