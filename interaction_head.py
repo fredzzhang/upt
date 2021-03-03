@@ -301,15 +301,7 @@ class InteractionHead(nn.Module):
         box_scores, box_labels, active_idx, active_idx_object_head = self.preprocess(
             box_coords, box_scores, num_gt_boxes
         )
-        # Update box features and logits
-        box_logits = [
-            l[idx] for l, idx
-            in zip(box_logits, active_idx_object_head)
-        ]
-        box_coords_object_head = [
-            c[idx] for c, idx
-            in zip(box_coords, active_idx_object_head)
-        ]
+        # Update box features and coordinates
         box_coords_for_pairs = [
             c[idx] for c, idx
             in zip(box_coords, active_idx)
@@ -334,6 +326,15 @@ class InteractionHead(nn.Module):
         )
 
         if self.training:
+            # Update box logits and coordinates for object classification loss
+            box_logits = [
+                l[idx] for l, idx
+                in zip(box_logits, active_idx_object_head)
+            ]
+            box_coords_object_head = [
+                c[idx] for c, idx
+                in zip(box_coords, active_idx_object_head)
+            ]
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
                 object_loss=self.compute_object_classification_loss(
