@@ -114,7 +114,7 @@ class InteractionHead(nn.Module):
             counter += n
             # Clamp the scores of the ground truth boxes to keep them in
             scores[:n_gt].clamp_(min=self.box_score_thresh)
-            # Remove background predictions and low scoring examples
+            # Remove low scoring examples
             active_idx = torch.nonzero(
                 scores >= self.box_score_thresh
             ).squeeze(1)
@@ -565,7 +565,7 @@ class GraphHead(nn.Module):
             x_keep, y_keep = torch.nonzero(x != y).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
-                continue
+                raise ValueError("There are no valid human-object pairs")
             # Human nodes have been duplicated and will be treated independently
             # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
