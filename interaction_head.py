@@ -88,13 +88,13 @@ class InteractionHead(nn.Module):
         augmented_boxes = []
         for c, t in zip(box_coords, targets):
             boxes = torch.cat([
-                c, t['boxes_h'], t['boxes_o']
+                t['boxes_h'], t['boxes_o'], c
             ], dim=0)
             augmented_boxes.append(boxes)
 
         return augmented_boxes
 
-    def preprocess(self, box_coords, box_scores):
+    def preprocess(self, box_coords, box_scores, num_gt_boxes):
         """
         box_coords: List[Tensor]
         box_scores: Tensor
@@ -106,12 +106,14 @@ class InteractionHead(nn.Module):
         # Remove scores predicted for the background class
         box_scores = box_scores[:, :-1]
         counter = 0
-        for boxes in box_coords:
+        for boxes, n_gt in zip(box_coords, num_gt_boxes):
             n = boxes.shape[0]
             scores, labels = torch.max(
                 box_scores[counter: counter + n, :], dim=1
             )
             counter += n
+            # Clamp the scores of the ground truth boxes to keep them in
+            scores[:n_gt].clamp_(min=self.box_score_thresh)
             # Remove background predictions and low scoring examples
             active_idx = torch.nonzero(
                 scores >= self.box_score_thresh
@@ -276,6 +278,9 @@ class InteractionHead(nn.Module):
         if self.training:
             assert targets is not None, "Targets should be passed during training."
             box_coords = self.append_ground_truth(box_coords, targets)
+            num_gt_boxes = [len(t['boxes_h']) + len(t['boxes_o']) for t in targets]
+        else:
+            num_gt_boxes = [0 for _ in range(len(box_coords))]
 
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
         box_features = box_features.flatten(start_dim=1)
@@ -290,7 +295,7 @@ class InteractionHead(nn.Module):
         box_features = box_features.split(n_boxes)
 
         box_coords, box_scores, box_labels, active_idx = self.preprocess(
-            box_coords, box_scores
+            box_coords, box_scores, num_gt_boxes
         )
         # Update box features and logits
         box_logits = [l[idx] for l, idx in zip(box_logits, active_idx)]
@@ -630,8 +635,7 @@ class GraphHead(nn.Module):
             all_object_class.append(labels[y_keep])
             # The prior score is the product of the pre-computed object detection scores with LIS
             all_prior.append(self.compute_prior_scores(
-                x_keep, y_keep,
-                scores.detach(), labels)
+                x_keep, y_keep, scores, labels)
             )
 
             counter += n
