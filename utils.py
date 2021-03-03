@@ -270,6 +270,9 @@ class CustomisedDLE(DistributedLearningEngine):
         output = self._state.net(
             *self._state.inputs, targets=self._state.targets)
         loss_dict = output.pop()
+        if loss_dict['hoi_loss'].isnan():
+            raise ValueError(f"The HOI loss is NaN for rank {self._rank}")
+
         self._state.loss = sum(loss for loss in loss_dict.values())
         self._state.loss.backward()
         self._state.optimizer.step()
