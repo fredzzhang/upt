@@ -44,8 +44,8 @@ class InteractionHead(nn.Module):
         human_idx, num_classes,
         # Hyperparameters
         box_nms_thresh=0.5,
-        box_score_thresh=0.8,
-        box_score_thresh_training=0.2,
+        box_score_thresh_pre=0.2,
+        box_score_thresh_post=0.2,
         max_human=15, max_object=15,
         # Misc
         distributed=False
@@ -62,8 +62,8 @@ class InteractionHead(nn.Module):
         self.num_classes = num_classes
         self.human_idx = human_idx
         self.box_nms_thresh = box_nms_thresh
-        self.box_score_thresh = box_score_thresh
-        self.box_score_thresh_training = box_score_thresh_training
+        self.box_score_thresh_pre = box_score_thresh_pre
+        self.box_score_thresh_post = box_score_thresh_post
 
         self.max_human = max_human
         self.max_object = max_object
@@ -80,11 +80,26 @@ class InteractionHead(nn.Module):
         idx = torch.argsort(conversion)
         self.conversion = torch.arange(81)[idx].tolist()
 
+    def prefiltering(self, detections):
+        """
+        Parameters:
+        -----------
+            detections: `list` [`dict`]
+        """
+        boxes = []
+        for d in detections:
+            keep = torch.nonzero(
+                d['scores'] >= self.box_score_thresh_pre
+            ).squeeze(1)
+            boxes.append(d['boxes'][keep].view(-1, 4))
+        return boxes
+
     def append_ground_truth(self, box_coords, targets):
         """
         Parameters:
-            box_coords: List[Tensor]
-            targets: List[dict]
+        -----------
+            box_coords: `list` [`Tensor`]
+            targets: `list` [`dict`]
         """
         augmented_boxes = []
         for c, t in zip(box_coords, targets):
@@ -104,7 +119,6 @@ class InteractionHead(nn.Module):
         return_scores = []
         return_labels = []
         return_idx = []
-        return_training_idx = []
         # Remove scores predicted for the background class
         box_scores = box_scores[:, :-1]
         counter = 0
@@ -115,20 +129,15 @@ class InteractionHead(nn.Module):
             )
             counter += n
             # Clamp the scores of the ground truth boxes to keep them in
-            scores[:n_gt].clamp_(min=self.box_score_thresh)
+            scores[:n_gt].clamp_(min=self.box_score_thresh_post)
             # Class-wise non-maximum suppression
             active_idx = box_ops.batched_nms(
                 boxes, scores, labels,
                 self.box_nms_thresh
             )
-            # Remove low scoring examples to train the box classification head
-            keep_idx = torch.nonzero(
-                scores[active_idx] >= self.box_score_thresh_training
-            ).squeeze(1)
-            return_training_idx.append(active_idx[keep_idx])
             # Remove low scoring examples
             keep_idx = torch.nonzero(
-                scores[active_idx] >= self.box_score_thresh
+                scores[active_idx] >= self.box_score_thresh_post
             ).squeeze(1)
             active_idx = active_idx[keep_idx]
             # Sort detections by scores
@@ -149,7 +158,7 @@ class InteractionHead(nn.Module):
             return_labels.append(labels[active_idx].view(-1))
             return_idx.append(active_idx)
 
-        return return_scores, return_labels, return_idx, return_training_idx
+        return return_scores, return_labels, return_idx
 
     def compute_object_classification_loss(self, boxes, logits, targets):
         labels = []
@@ -255,6 +264,17 @@ class InteractionHead(nn.Module):
 
     def forward(self, features, detections, image_shapes, targets=None):
         """
+        Parameters:
+        -----------
+        features: `OrderedDict` [`Tensor`]
+        detections: `list` [`dict`]
+        image_shapes: `list` [`tuple`]
+        targets: `list` [`dict`]
+
+        Returns:
+        --------
+        ...
+
         Arguments:
             features(OrderedDict[Tensor]): Image pyramid with different levels
             detections(list[dict]): Object detections with following keys 
@@ -278,7 +298,7 @@ class InteractionHead(nn.Module):
                     zero otherwise. This is only returned when targets are given
             During training, the classification loss is appended to the end of the list
         """
-        box_coords = [detection['boxes'] for detection in detections]
+        box_coords = self.prefiltering(detections)
         if self.training:
             assert targets is not None, "Targets should be passed during training."
             box_coords = self.append_ground_truth(box_coords, targets)
@@ -302,7 +322,7 @@ class InteractionHead(nn.Module):
             box_coords, box_scores, num_gt_boxes
         )
         # Update box features and coordinates
-        box_coords_for_pairs = [
+        boxes = [
             c[idx] for c, idx
             in zip(box_coords, active_idx)
         ]
@@ -314,7 +334,7 @@ class InteractionHead(nn.Module):
         box_pair_features, boxes_h, boxes_o, object_class,\
         box_pair_labels, box_pair_prior = self.box_pair_head(
             features, image_shapes, box_features,
-            box_coords_for_pairs, box_labels, box_scores, targets
+            boxes, box_labels, box_scores, targets
         )
 
         box_pair_features = torch.cat(box_pair_features)
@@ -326,19 +346,10 @@ class InteractionHead(nn.Module):
         )
 
         if self.training:
-            # Update box logits and coordinates for object classification loss
-            box_logits = [
-                l[idx] for l, idx
-                in zip(box_logits, active_idx_object_head)
-            ]
-            box_coords_object_head = [
-                c[idx] for c, idx
-                in zip(box_coords, active_idx_object_head)
-            ]
             loss_dict = dict(
                 hoi_loss=self.compute_interaction_classification_loss(results),
                 object_loss=self.compute_object_classification_loss(
-                    box_coords_object_head, box_logits, targets)
+                    box_coords, box_logits, targets)
             )
             results.append(loss_dict)
 
