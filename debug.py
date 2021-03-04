@@ -18,8 +18,52 @@ import matplotlib.patches as patches
 from utils import custom_collate, DataFactory
 from models import SpatioAttentiveGraph
 
+from pocket.utils import draw_boxes
 
-# @torch.no_grad()
+def visualise_entire_image(dataset, output):
+    """Visualise bounding box pairs in the whole image by classes"""
+    bh=output['boxes_h']
+    bo=output['boxes_o']
+    no = len(bo)
+
+    bbox, inverse = torch.unique(torch.cat([bo, bh]), dim=0, return_inverse=True)
+    idxh = inverse[no:]
+    idxo = inverse[:no]
+
+    im = dataset.dataset.load_image(
+        os.path.join(
+            dataset.dataset._root,
+            dataset.dataset.filename(args.index)
+        )
+    )
+
+    # Draw the bounding boxes
+    fig = plt.figure()
+    plt.imshow(im)
+    ax = plt.gca()
+    draw_boxes(ax, bbox)
+    plt.show()
+
+    # Print predicted classes and scores
+    scores = output['scores']
+    prior = output['prior']
+    index = output['index']
+    pred = output['prediction']
+    labels = output['labels']
+
+    unique_hoi = torch.unique(pred)
+    for hoi in unique_hoi:
+        print(f"\n=> Interaction: {dataset.interacitons[hoi]}")
+        sample_idx = torch.nonzero(pred == hoi).squeeze(1)
+        for idx in sample_idx:
+            b_idx = index[idx]
+            print(
+                f"({idxh[b_idx], idxo[b_idx]}),",
+                f"score: {scores[idx]}, prior: {prior[idx]}",
+                f"label: {bool(labels[idx])}"
+            )
+
+@torch.no_grad()
 def main(args):
 
     dataset = DataFactory(
@@ -37,7 +81,7 @@ def main(args):
         dataset.dataset.object_to_verb, 49,
         num_iterations=args.num_iter
     )
-    # net.eval()
+    net.eval()
 
     if os.path.exists(args.model_path):
         print("\nLoading model from ", args.model_path)
@@ -56,7 +100,8 @@ def main(args):
     image = [image]; detection = [detection]; target = [target]
 
     output = net(image, detection, target)
-    torch.save(output, 'data.pt')
+    visualise_entire_image(dataset, output[0])
+    # torch.save(output, 'data.pt')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
