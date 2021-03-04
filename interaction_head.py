@@ -16,7 +16,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-from ops import LIS, compute_spatial_encodings, binary_focal_loss
+from ops import compute_spatial_encodings, binary_focal_loss
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
@@ -318,7 +318,7 @@ class InteractionHead(nn.Module):
         box_logits = box_logits.split(n_boxes)
         box_features = box_features.split(n_boxes)
 
-        box_scores, box_labels, active_idx, active_idx_object_head = self.preprocess(
+        box_scores, box_labels, active_idx = self.preprocess(
             box_coords, box_scores, num_gt_boxes
         )
         # Update box features and coordinates
@@ -515,8 +515,8 @@ class GraphHead(nn.Module):
         """
         prior = torch.zeros(len(x), self.num_cls, device=scores.device)
 
-        # Product of human and object detection scores with LIS
-        prod = LIS(scores[x]) * LIS(scores[y])
+        # Product of human and object detection scores
+        prod = scores[x] * scores[y]
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
@@ -667,7 +667,7 @@ class GraphHead(nn.Module):
             all_boxes_h.append(coords[x_keep])
             all_boxes_o.append(coords[y_keep])
             all_object_class.append(labels[y_keep])
-            # The prior score is the product of the pre-computed object detection scores with LIS
+            # The prior score is the product of the object detection scores
             all_prior.append(self.compute_prior_scores(
                 x_keep, y_keep, scores, labels)
             )
