@@ -1,4 +1,4 @@
-# Spatio-attentive Graphs
+# Warning: The repo is currently under major restructuring. Listed instructions might not work.
 
 Official PyTorch implementation for our paper [Spatio-attentive Graphs for Human-Object Interaction Detection](https://arxiv.org/pdf/2012.06060.pdf)
 
