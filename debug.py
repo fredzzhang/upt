@@ -18,7 +18,29 @@ import matplotlib.patches as patches
 from utils import custom_collate, DataFactory
 from models import SpatioAttentiveGraph
 
-from pocket.utils import draw_boxes
+def colour_pool(n):
+    pool = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+        '#9467bd', '#17becf', '#e377c2'
+    ]
+    nc = len(pool)
+
+    repeat = n // nc
+    big_pool = []
+    for _ in range(repeat):
+        big_pool += pool
+    return big_pool + pool[:n%nc]
+
+
+def draw_boxes(ax, boxes):
+    pool = colour_pool(len(boxes))
+    xy = boxes[:, :2].unbind(0)
+    h, w = (boxes[:, 2:] - boxes[:, :2]).unbind(1)
+    for i, (a, b, c, d) in enumerate(zip(xy, h.tolist(), w.tolist(), pool)):
+        patch = patches.Rectangle(a.tolist(), b, c, facecolor='none', edgecolor=d)
+        ax.add_patch(patch)
+        plt.text(*a.tolist(), str(i), fontsize=12, fontweight='semibold', color=d)
+
 
 def visualise_entire_image(dataset, output):
     """Visualise bounding box pairs in the whole image by classes"""
@@ -37,13 +59,6 @@ def visualise_entire_image(dataset, output):
         )
     )
 
-    # Draw the bounding boxes
-    fig = plt.figure()
-    plt.imshow(im)
-    ax = plt.gca()
-    draw_boxes(ax, bbox)
-    plt.show()
-
     # Print predicted classes and scores
     scores = output['scores']
     prior = output['prior']
@@ -51,17 +66,24 @@ def visualise_entire_image(dataset, output):
     pred = output['prediction']
     labels = output['labels']
 
-    unique_hoi = torch.unique(pred)
-    for hoi in unique_hoi:
-        print(f"\n=> Interaction: {dataset.interacitons[hoi]}")
-        sample_idx = torch.nonzero(pred == hoi).squeeze(1)
+    unique_actions = torch.unique(pred)
+    for verb in unique_actions:
+        print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
+        sample_idx = torch.nonzero(pred == verb).squeeze(1)
         for idx in sample_idx:
             b_idx = index[idx]
             print(
-                f"({idxh[b_idx], idxo[b_idx]}),",
-                f"score: {scores[idx]}, prior: {prior[idx]}",
+                f"({idxh[b_idx].item():<2}, {idxo[b_idx].item():<2}),",
+                f"score: {scores[idx]:.4f}, prior: {prior[idx]:.2f}",
                 f"label: {bool(labels[idx])}"
             )
+
+    # Draw the bounding boxes
+    fig = plt.figure()
+    plt.imshow(im)
+    ax = plt.gca()
+    draw_boxes(ax, bbox)
+    plt.show()
 
 @torch.no_grad()
 def main(args):
@@ -70,7 +92,6 @@ def main(args):
         name='hicodet', partition=args.partition,
         data_root=args.data_root,
         detection_root=args.detection_dir,
-        flip=True
     )
     dataloader = torch.utils.data.DataLoader(
         dataset, collate_fn=custom_collate,
@@ -79,7 +100,9 @@ def main(args):
 
     net = SpatioAttentiveGraph(
         dataset.dataset.object_to_verb, 49,
-        num_iterations=args.num_iter
+        num_iterations=args.num_iter,
+        box_score_thresh_pre=args.box_thresh_pre,
+        box_score_thresh_post=args.box_thresh_post
     )
     net.eval()
 
@@ -96,7 +119,7 @@ def main(args):
     # iterator = iter(dataloader)
     # image, detection, target = next(iterator)
     
-    image, detection, target = dataset[34985]
+    image, detection, target = dataset[args.index]
     image = [image]; detection = [detection]; target = [target]
 
     output = net(image, detection, target)
@@ -111,10 +134,11 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--human-thresh', default=0.2, type=float)
-    parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--box-thresh-pre', default=0.2, type=float)
+    parser.add_argument('--box-thresh-post', default=0.2, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
+    parser.add_argument('--index', default=0, type=int)
     
     args = parser.parse_args()
     print(args)
