@@ -72,7 +72,7 @@ def binary_focal_loss(x, y, alpha=0.5, gamma=2.0, reduction='mean', eps=1e-6):
     Focal loss by Lin et al.
     https://arxiv.org/pdf/1708.02002.pdf
 
-    L = - |1-y-alpha| * |y-x|^{gamma} * log(|y-x|)
+    L = - |1-y-alpha| * |y-x|^{gamma} * log(|1-y-x|)
 
     Arguments:
         x(Tensor[N, K]): Post-normalisation scores
