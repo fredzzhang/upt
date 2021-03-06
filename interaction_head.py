@@ -107,7 +107,9 @@ class InteractionHead(nn.Module):
             ).squeeze(1)
             # Class-wise non-maximum suppression
             keep_idx = box_ops.batched_nms(
-                boxes, scores, labels,
+                boxes[active_idx],
+                scores[active_idx],
+                labels[active_idx],
                 self.box_nms_thresh
             )
             active_idx = active_idx[keep_idx]
