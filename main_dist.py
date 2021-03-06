@@ -82,6 +82,7 @@ def main(rank, args):
         object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter, postprocess=False,
         max_human=args.max_human, max_object=args.max_object,
+        gamma=args.gamma,
         distributed=True
     )
     # Fix backbone parameters
@@ -151,6 +152,7 @@ if __name__ == '__main__':
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--human-thresh', default=0.2, type=float)
     parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--gamma', default=0.5, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--milestones', nargs='+', default=[10,], type=int,

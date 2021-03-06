@@ -41,6 +41,7 @@ class InteractionHead(nn.Module):
                 box_pair_predictor,
                 human_idx,
                 num_classes,
+                gamma=0.5,
                 box_nms_thresh=0.5,
                 max_human=10,
                 max_object=10,
@@ -55,6 +56,7 @@ class InteractionHead(nn.Module):
 
         self.num_classes = num_classes
         self.human_idx = human_idx
+        self.gamma= gamma
         self.box_nms_thresh = box_nms_thresh
 
         self.max_human = max_human
@@ -145,7 +147,7 @@ class InteractionHead(nn.Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
         loss = binary_focal_loss(
-            torch.cat(scores), labels, reduction='sum', gamma=0.5
+            torch.cat(scores), labels, reduction='sum', gamma=self.gamma
         )
         return loss / n_p
 
