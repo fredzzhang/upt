@@ -103,7 +103,7 @@ class InteractionHead(nn.Module):
 
             # Remove low scoring examples
             active_idx = torch.nonzero(
-                scores[active_idx] >= self.box_score_thresh
+                scores >= self.box_score_thresh
             ).squeeze(1)
             # Class-wise non-maximum suppression
             keep_idx = box_ops.batched_nms(
