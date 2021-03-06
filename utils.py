@@ -263,7 +263,7 @@ class CustomisedDLE(DistributedLearningEngine):
     def _on_start(self):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
         self.hoi_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.obj_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.intr_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
@@ -278,7 +278,7 @@ class CustomisedDLE(DistributedLearningEngine):
         self._state.optimizer.step()
 
         self.hoi_loss.append(loss_dict['hoi_loss'])
-        self.obj_loss.append(loss_dict['object_loss'])
+        self.intr_loss.append(loss_dict['interactiveness_loss'])
 
         self._synchronise_and_log_results(output, self.meter)
 
@@ -304,12 +304,12 @@ class CustomisedDLE(DistributedLearningEngine):
     def _print_statistics(self):
         super()._print_statistics()
         hoi_loss = self.hoi_loss.mean()
-        obj_loss = self.obj_loss.mean()
+        intr_loss = self.intr_loss.mean()
         if self._rank == 0:
             print(f"=> HOI classification loss: {hoi_loss:.4f},",
-            f"object classification loss: {obj_loss:.4f}")
+            f"interactiveness loss: {intr_loss:.4f}")
         self.hoi_loss.reset()
-        self.obj_loss.reset()
+        self.intr_loss.reset()
 
     def _synchronise_and_log_results(self, output, meter):
         scores = []; pred = []; labels = []
