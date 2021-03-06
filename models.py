@@ -101,8 +101,7 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             node_encoding_size=1024,
             representation_size=1024,
             num_classes=117,
-            box_score_thresh_pre=0.2,
-            box_score_thresh_post=0.2,
+            box_score_thresh=0.2,
             fg_iou_thresh=0.5,
             num_iterations=1,
             distributed=False,
@@ -119,8 +118,6 @@ class SpatioAttentiveGraph(GenericHOINetwork):
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
             pretrained=pretrained)
         backbone = detector.backbone
-        box_head = detector.roi_heads.box_head
-        cls_head = detector.roi_heads.box_predictor.cls_score
 
         box_roi_pool = MultiScaleRoIAlign(
             featmap_names=['0', '1', '2', '3'],
@@ -141,18 +138,17 @@ class SpatioAttentiveGraph(GenericHOINetwork):
         )
 
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
+        box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
-            box_head=box_head,
-            cls_head=cls_head,
             box_pair_head=box_pair_head,
+            box_pair_suppressor=box_pair_suppressor,
             box_pair_predictor=box_pair_predictor,
             num_classes=num_classes,
             human_idx=human_idx,
             box_nms_thresh=box_nms_thresh,
-            box_score_thresh_pre=box_score_thresh_pre,
-            box_score_thresh_post=box_score_thresh_post,
+            box_score_thresh=box_score_thresh,
             max_human=max_human,
             max_object=max_object,
             distributed=distributed
