@@ -16,7 +16,7 @@ import torchvision.ops.boxes as box_ops
 from torch import nn
 from pocket.ops import Flatten
 
-from ops import compute_spatial_encodings, binary_focal_loss
+from ops import LIS, compute_spatial_encodings, binary_focal_loss
 
 class InteractionHead(nn.Module):
     """Interaction head that constructs and classifies box pairs
@@ -469,7 +469,7 @@ class GraphHead(nn.Module):
         prior = torch.zeros(len(x), self.num_cls, device=scores.device)
 
         # Product of human and object detection scores
-        prod = scores[x] * scores[y]
+        prod = LIS(scores[x]) * LIS(scores[y])
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping

@@ -10,6 +10,13 @@ Australian Centre for Robotic Vision
 import torch
 import torchvision.ops.boxes as box_ops
 
+def LIS(x, T=8.3, k=12, w=10):
+    """
+    Low-grade suppression
+    https://github.com/DirtyHarryLYL/Transferable-Interactiveness-Network
+    """
+    return T / ( 1 + torch.exp(k - w * x))
+
 def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
     """
     Arguments:
