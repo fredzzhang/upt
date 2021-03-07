@@ -538,7 +538,7 @@ class GraphHead(nn.Module):
                 )
                 all_boxes_h.append(torch.zeros(0, 4, device=device))
                 all_boxes_o.append(torch.zeros(0, 4, device=device))
-                all_object_class.append(torch.zeros(0, device=device))
+                all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
                 all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
                 all_labels.append(torch.zeros(0, self.num_cls, device=device))
                 continue
