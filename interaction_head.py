@@ -183,7 +183,7 @@ class InteractionHead(nn.Module):
         """
         Arguments:
             logits(Tensor[N,K]): Pre-sigmoid logits for target classes
-            prior(List[Tensor[M,K]]): Prior scores organised on a per-image basis
+            prior(List[Tensor[2,M,K]]): Prior scores organised on a per-image basis
             boxes_h(List[Tensor[M,4]])
             boxes_o(List[Tensor[M,4]])
             object_class(List[Tensor[M]])
@@ -199,7 +199,7 @@ class InteractionHead(nn.Module):
                 'labels': Tensor[L]: Binary labels for each prediction
 
         """
-        num_boxes = [len(p) for p in prior]
+        num_boxes = [len(b) for b in boxes_h]
 
         weights = torch.sigmoid(logits_s).squeeze(1)
         scores = torch.sigmoid(logits_p)
@@ -213,13 +213,13 @@ class InteractionHead(nn.Module):
             weights, scores, prior, boxes_h, boxes_o, object_class, labels
         ):
             # Keep valid classes
-            x, y = torch.nonzero(p).unbind(1)
+            x, y = torch.nonzero(p[0]).unbind(1)
 
             result_dict = dict(
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
-                scores=s[x, y] * p[x, y] * w[x].detach(),
-                object=o, prior=p, weights=w
+                scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
+                object=o, prior=p[:, x, y], weights=w
             )
             # If binary labels are provided
             if l is not None:
@@ -468,10 +468,11 @@ class GraphHead(nn.Module):
             scores(Tensor[N])
             object_class(Tensor[N])
         """
-        prior = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_o = torch.zeros_like(prior_h)
 
-        # Product of human and object detection scores
-        prod = LIS(scores[x]) * LIS(scores[y])
+        s_h = LIS(scores[x])
+        s_o = LIS(scores[y])
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
@@ -482,9 +483,10 @@ class GraphHead(nn.Module):
         # Flatten mapped target indices
         flat_target_idx = [t for tar in target_cls_idx for t in tar]
 
-        prior[pair_idx, flat_target_idx] = prod[pair_idx]
+        prior_h[pair_idx, flat_target_idx] = s_h[pair_idx]
+        prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
-        return prior
+        return torch.stack([prior_h, prior_o])
 
     def forward(self,
         features, image_shapes, box_features, box_coords,
