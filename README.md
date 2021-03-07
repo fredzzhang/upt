@@ -1,5 +1,4 @@
-# Warning: The repo is currently under major restructuring. Listed instructions might not work.
-
+# Warning: The repo is currently under major restructuring. Listed hyper-parameters will NOT lead to optimal performance
 Official PyTorch implementation for our paper [Spatio-attentive Graphs for Human-Object Interaction Detection](https://arxiv.org/pdf/2012.06060.pdf)
 
 <img src="./assets/bipartite_graph.png" alt="bipartite_graph" height="200" align="left"/>
