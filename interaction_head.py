@@ -471,8 +471,8 @@ class GraphHead(nn.Module):
         prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
-        s_h = LIS(scores[x])
-        s_o = LIS(scores[y])
+        s_h = scores[x].pow(2)
+        s_o = scores[y].pow(2)
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
