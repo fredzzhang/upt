@@ -42,8 +42,7 @@ def main(args):
         num_iterations=args.num_iter,
         max_human=args.max_human,
         max_object=args.max_object,
-        box_score_thresh_pre=args.box_thresh_pre,
-        box_score_thresh_post=args.box_thresh_post
+        box_score_thresh=args.box_score_thresh
     )
     epoch = 0
     if os.path.exists(args.model_path):
@@ -74,8 +73,7 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--box-thresh-pre', default=0.2, type=float)
-    parser.add_argument('--box-thresh-post', default=0.2, type=float)
+    parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
