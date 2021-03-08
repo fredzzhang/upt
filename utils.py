@@ -133,8 +133,6 @@ class DataFactory(Dataset):
             detection = pocket.ops.to_tensor(json.load(f),
                 input_format='dict')
 
-        detection = self.filter_detections(detection)
-
         if self._flip[i]:
             image = hflip(image)
             w, _ = image.size
@@ -264,14 +262,23 @@ class CustomisedDLE(DistributedLearningEngine):
 
     def _on_start(self):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
+        self.hoi_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.intr_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         self._state.optimizer.zero_grad()
         output = self._state.net(
             *self._state.inputs, targets=self._state.targets)
-        self._state.loss = output.pop()
+        loss_dict = output.pop()
+        if loss_dict['hoi_loss'].isnan():
+            raise ValueError(f"The HOI loss is NaN for rank {self._rank}")
+
+        self._state.loss = sum(loss for loss in loss_dict.values())
         self._state.loss.backward()
         self._state.optimizer.step()
+
+        self.hoi_loss.append(loss_dict['hoi_loss'])
+        self.intr_loss.append(loss_dict['interactiveness_loss'])
 
         self._synchronise_and_log_results(output, self.meter)
 
@@ -287,12 +294,22 @@ class CustomisedDLE(DistributedLearningEngine):
         # Print performance and time
         if self._rank == 0:
             print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
-                "validation mAP: {:.4f}, total time: {:.2f}s".format(
+                "validation mAP: {:.4f}, total time: {:.2f}s\n".format(
                     self._state.epoch, ap_train.mean().item(), timer[0],
                     ap_val.mean().item(), timer[1]
             ))
             self.meter.reset()
         super()._on_end_epoch()
+
+    def _print_statistics(self):
+        super()._print_statistics()
+        hoi_loss = self.hoi_loss.mean()
+        intr_loss = self.intr_loss.mean()
+        if self._rank == 0:
+            print(f"=> HOI classification loss: {hoi_loss:.4f},",
+            f"interactiveness loss: {intr_loss:.4f}")
+        self.hoi_loss.reset()
+        self.intr_loss.reset()
 
     def _synchronise_and_log_results(self, output, meter):
         scores = []; pred = []; labels = []
