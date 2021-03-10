@@ -113,12 +113,12 @@ def main(rank, args):
     param_group_2 = []
     for k, v in engine.fetch_state_key('net').named_parameters():
         if v.requires_grad:
-            if k.startswith('backbone'):
+            if k.startswith('module.backbone'):
                 param_group_1.append(v)
-            elif k.startswith('interaction_head'):
+            elif k.startswith('module.interaction_head'):
                 param_group_2.append(v)
             else:
-                raise KeyError("Unknown parameter name {k}")
+                raise KeyError(f"Unknown parameter name {k}")
 
     optim = torch.optim.AdamW([
         {'params': param_group_1, 'lr': args.learning_rate * args.lr_decay},
