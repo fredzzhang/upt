@@ -165,9 +165,9 @@ class SpatioAttentiveGraph(GenericHOINetwork):
 
         super().__init__(backbone, interaction_head, transform, postprocess)
 
-    def state_dict(self):
-        """Override method to only return state dict of the interaction head"""
-        return self.interaction_head.state_dict()
-    def load_state_dict(self, x):
-        """Override method to only load state dict of the interaction head"""
-        self.interaction_head.load_state_dict(x)
+    # def state_dict(self):
+    #     """Override method to only return state dict of the interaction head"""
+    #     return self.interaction_head.state_dict()
+    # def load_state_dict(self, x):
+    #     """Override method to only load state dict of the interaction head"""
+    #     self.interaction_head.load_state_dict(x)
