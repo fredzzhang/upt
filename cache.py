@@ -153,8 +153,6 @@ def main(args):
             name=args.dataset, partition=args.partition,
             data_root=args.data_root,
             detection_root=args.detection_dir,
-            box_score_thresh_h=args.human_thresh,
-            box_score_thresh_o=args.object_thresh
         ), collate_fn=custom_collate, batch_size=1,
         num_workers=args.num_workers, pin_memory=True
     )
@@ -162,13 +160,16 @@ def main(args):
     if args.dataset == 'hicodet':
         object_to_target = dataloader.dataset.dataset.object_to_verb
         human_idx = 49
+        num_classes = 117
     elif args.dataset == 'vcoco':
         object_to_target = dataloader.dataset.dataset.object_to_action
         human_idx = 1
+        num_classes = 24
     net = SpatioAttentiveGraph(
-        object_to_target, human_idx,
+        object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter,
-        max_human=args.max_human, max_object=args.max_object
+        max_human=args.max_human, max_object=args.max_object,
+        box_score_thresh=args.box_score_thresh
     )
     if os.path.exists(args.model_path):
         print("Loading model from ", args.model_path)
@@ -197,8 +198,7 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--human-thresh', default=0.2, type=float)
-    parser.add_argument('--object-thresh', default=0.2, type=float)
+    parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--num-workers', default=2, type=int)
