@@ -155,7 +155,7 @@ class InteractionHead(nn.Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
         loss = binary_focal_loss(
-            torch.cat(scores), labels, reduction='sum', gamma=self.gamma
+            torch.cat(scores), labels, reduction='sum', gamma=0.2
         )
         return loss / n_p
 
@@ -175,7 +175,7 @@ class InteractionHead(nn.Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
         loss = binary_focal_loss(
-            weights, labels, reduction='sum', gamma=0.5
+            weights, labels, reduction='sum', gamma=self.gamma
         )
         return loss / n_p
 
@@ -471,8 +471,12 @@ class GraphHead(nn.Module):
         prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
-        s_h = scores[x].pow(2.8)
-        s_o = scores[y].pow(2.8)
+        if self.training:
+            p = 1.0
+        else:
+            p = 2.8
+        s_h = scores[x].pow(p)
+        s_o = scores[y].pow(p)
 
         # Map object class index to target class index
         # Object class index to target class index is a one-to-many mapping
