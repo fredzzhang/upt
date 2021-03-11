@@ -82,9 +82,6 @@ def main(rank, args):
         gamma=args.gamma,
         distributed=True
     )
-    # Fix backbone parameters
-    for p in net.backbone.parameters():
-        p.requires_grad = False
 
     if os.path.exists(args.checkpoint_path):
         print("=> Rank {}: continue from saved checkpoint".format(
@@ -109,18 +106,30 @@ def main(rank, args):
         print_interval=args.print_interval,
         cache_dir=args.cache_dir
     )
-    net_params = [
-        p for p in engine.fetch_state_key('net').parameters()
-        if p.requires_grad
-    ]
-    optim = torch.optim.AdamW(
-        net_params,
-        lr=args.learning_rate,
+    # Seperate backbone parameters from the rest
+    param_group_1 = []
+    param_group_2 = []
+    for k, v in engine.fetch_state_key('net').named_parameters():
+        if v.requires_grad:
+            if k.startswith('module.backbone'):
+                param_group_1.append(v)
+            elif k.startswith('module.interaction_head'):
+                param_group_2.append(v)
+            else:
+                raise KeyError(f"Unknown parameter name {k}")
+    # Fine-tune backbone with lower learning rate
+    optim = torch.optim.AdamW([
+        {'params': param_group_1, 'lr': args.learning_rate * args.lr_decay},
+        {'params': param_group_2}
+        ], lr=args.learning_rate,
         weight_decay=args.weight_decay
     )
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optim, milestones=args.milestones, gamma=args.lr_decay
+    lambda1 = lambda epoch: 1.
+    lambda2 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optim, lr_lambda=[lambda1, lambda2]
     )
+    # Override optimiser and learning rate scheduler
     engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
     engine.update_state_key(epoch=epoch, iteration=iteration)
 
