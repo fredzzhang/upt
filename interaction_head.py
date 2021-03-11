@@ -301,7 +301,7 @@ class InteractionHead(nn.Module):
 
         return results
 
-class AttentionHead(nn.Module):
+class MultiBranchFusion(nn.Module):
     def __init__(self, appearance_size, spatial_size, representation_size, cardinality):
         super().__init__()
         self.cardinality = cardinality
@@ -329,7 +329,7 @@ class AttentionHead(nn.Module):
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
 
-class MessageAttentionHead(AttentionHead):
+class MessageMBF(MultiBranchFusion):
     def __init__(self, appearance_size, spatial_size, representation_size, node_type, cardinality):
         super().__init__(appearance_size, spatial_size, representation_size, cardinality)
 
@@ -400,12 +400,12 @@ class GraphHead(nn.Module):
         self.adjacency = nn.Linear(representation_size, 1)
 
         # Compute messages
-        self.sub_to_obj = MessageAttentionHead(
+        self.sub_to_obj = MessageMBF(
             node_encoding_size, 1024,
             representation_size, node_type='human',
             cardinality=16
         )
-        self.obj_to_sub = MessageAttentionHead(
+        self.obj_to_sub = MessageMBF(
             node_encoding_size, 1024,
             representation_size, node_type='object',
             cardinality=16
@@ -425,7 +425,7 @@ class GraphHead(nn.Module):
         )
 
         # Spatial attention head
-        self.attention_head = AttentionHead(
+        self.attention_head = MultiBranchFusion(
             node_encoding_size * 2,
             1024, representation_size,
             cardinality=16
@@ -433,7 +433,7 @@ class GraphHead(nn.Module):
 
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
         # Attention head for global features
-        self.attention_head_g = AttentionHead(
+        self.attention_head_g = MultiBranchFusion(
             256, 1024,
             representation_size, cardinality=16
         )
