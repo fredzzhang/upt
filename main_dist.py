@@ -124,7 +124,7 @@ def main(rank, args):
         ], lr=args.learning_rate,
         weight_decay=args.weight_decay
     )
-    lambda1 = lambda epoch: 1.
+    lambda1 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
     lambda2 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
         optim, lr_lambda=[lambda1, lambda2]
