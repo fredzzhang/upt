@@ -74,7 +74,7 @@ def visualise_entire_image(dataset, output):
             b_idx = index[idx]
             print(
                 f"({idxh[b_idx].item():<2}, {idxo[b_idx].item():<2}),",
-                f"score: {scores[idx]:.4f}, prior: {prior[idx]:.2f}",
+                f"score: {scores[idx]:.4f}, prior: {prior[0, idx]:.2f}, {prior[1, idx]:.2f}",
                 f"label: {bool(labels[idx])}"
             )
 
@@ -101,8 +101,7 @@ def main(args):
     net = SpatioAttentiveGraph(
         dataset.dataset.object_to_verb, 49,
         num_iterations=args.num_iter,
-        box_score_thresh_pre=args.box_thresh_pre,
-        box_score_thresh_post=args.box_thresh_post
+        box_score_thresh=args.box_score_thresh
     )
     net.eval()
 
@@ -134,8 +133,7 @@ if __name__ == "__main__":
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--box-thresh-pre', default=0.2, type=float)
-    parser.add_argument('--box-thresh-post', default=0.2, type=float)
+    parser.add_argument('--box-score_thresh', default=0.2, type=float)
     parser.add_argument('--num-workers', default=2, type=int)
     parser.add_argument('--model-path', default='', type=str)
     parser.add_argument('--index', default=0, type=int)
