@@ -119,11 +119,9 @@ As a reference, the performance of the provided model is shown in the table belo
 
 |Detections|Default Setting|Known Object Setting|
 |:-|:-:|:-:|
-|Pre-trained on MS COCO|(`19.39`, `15.05`, `20.68`)|(`22.71`, `17.72`, `24.20`)|
-|Fine-tuned on HICO-DET ([VCL](https://drive.google.com/file/d/1QI1kcZJqI-ym6AGQ2swwp4CKb39uLf-4/view))|(`22.61`, `16.30`, `24.49`)|(`25.11`, `18.05`, `27.22`)|
-|Fine-tuned on HICO-DET ([This repo](https://github.com/fredzzhang/hicodet))|(`23.57`, `16.93`, `25.55`)|(`26.48`, `18.79`, `28.77`)|
-|Fine-tuned on HICO-DET ([DRG](https://drive.google.com/file/d/18_6K2P6s9vMBWOvcNNQqUj2wfLhbvpLo/view))|(`29.55`, `22.61`, `31.62`)|(`31.92`, `24.24`, `34.21`)|
-|Ground truth detections|(`49.26`, `35.82`, `53.27`)|(`49.40`, `35.85`, `53.45`)|
+|Pre-trained on MS COCO|(`21.85`, `18.11`, `22.97`)|(`25.53`, `21.79`, `26.64`)|
+|Fine-tuned on HICO-DET ([DRG](https://drive.google.com/file/d/18_6K2P6s9vMBWOvcNNQqUj2wfLhbvpLo/view))|(`31.33`, `24.72`, `33.31`)|(`34.37`, `27.18`, `36.52`)|
+|Ground truth detections|(`51.53`, `41.02`, `54.67`)|(`51.75`, `41.40`, `54.84`)|
 
 ### V-COCO
 
