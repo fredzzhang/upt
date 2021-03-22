@@ -10,22 +10,29 @@ Australian Centre for Robotic Vision
 import torch
 import torchvision.ops.boxes as box_ops
 
-def LIS(x, T=8.3, k=12, w=10):
-    """
-    Low-grade suppression
-    https://github.com/DirtyHarryLYL/Transferable-Interactiveness-Network
-    """
-    return T / ( 1 + torch.exp(k - w * x))
+from torch import Tensor
+from typing import List, Tuple
 
-def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
+def compute_spatial_encodings(
+    boxes_1: List[Tensor], boxes_2: List[Tensor],
+    shapes: List[Tuple[int, int]], eps: float = 1e-10
+) -> Tensor:
     """
-    Arguments:
-        boxes_1[List[Tensor[M, 4]]]
-        boxes_1[List[Tensor[M, 4]]]
-        shapes(List[Tuple[height, width]])
-        eps(float): A constant used for numerical stability
+    Parameters:
+    -----------
+        boxes_1: List[Tensor]
+            First set of bounding boxes (M, 4)
+        boxes_1: List[Tensor]
+            Second set of bounding boxes (M, 4)
+        shapes: List[Tuple[int, int]]
+            Image shapes, heights followed by widths
+        eps: float
+            A small constant used for numerical stability
+
     Returns:
-        Tensor[N, 36]
+    --------
+        Tensor
+            Computed spatial encodings between the boxes (N, 36)
     """
     features = []
     for b1, b2, shape in zip(boxes_1, boxes_2, shapes):
@@ -67,20 +74,38 @@ def compute_spatial_encodings(boxes_1, boxes_2, shapes, eps=1e-10):
         )
     return torch.cat(features)
 
-def binary_focal_loss(x, y, alpha=0.5, gamma=2.0, reduction='mean', eps=1e-6):
+def binary_focal_loss(
+    x: Tensor, y: Tensor,
+    alpha: float = 0.5,
+    gamma: float = 2.0,
+    reduction: str = 'mean',
+    eps: float = 1e-6
+) -> Tensor:
     """
     Focal loss by Lin et al.
     https://arxiv.org/pdf/1708.02002.pdf
 
     L = - |1-y-alpha| * |y-x|^{gamma} * log(|1-y-x|)
 
-    Arguments:
-        x(Tensor[N, K]): Post-normalisation scores
-        y(Tensor[N, K]): Binary labels
-        alpha(float): Hyper parameter
-        gamma(float): Hyper paramter
-        reduction(str): Reduction methods
-        eps(float): A small constant to avoid NaN values from 'PowBackward'
+    Parameters:
+    -----------
+        x: Tensor[N, K]
+            Post-normalisation scores
+        y: Tensor[N, K]
+            Binary labels
+        alpha: float
+            Hyper-parameter that balances between postive and negative examples
+        gamma: float
+            Hyper-paramter suppresses well-classified examples
+        reduction: str
+            Reduction methods
+        eps: float
+            A small constant to avoid NaN values from 'PowBackward'
+
+    Returns:
+    --------
+        loss: Tensor
+            Computed loss tensor
     """
     loss = (1 - y - alpha).abs() * ((y-x).abs() + eps) ** gamma * \
         torch.nn.functional.binary_cross_entropy(
