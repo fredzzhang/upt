@@ -1,8 +1,8 @@
 #!/bin/bash
 
 DIR=../checkpoints
-FILE=weights-hicodet-b32h16e11.pt
-ID=1giZODneEPb5AYQZPzltQEkSRzzRW8Bpj
+FILE=scg_1e-4_b32h16e7_hicodet_e2e.pt
+ID=1yOebBfiNIR20EyAZGap88ecUgMR8J0X_
 
 if [ ! -d $DIR ]; then
    mkdir $DIR
