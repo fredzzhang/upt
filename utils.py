@@ -11,7 +11,6 @@ import os
 import json
 import time
 import torch
-import pickle
 import numpy as np
 from tqdm import tqdm
 import torch.distributed as dist
@@ -24,7 +23,7 @@ from vcoco.vcoco import VCOCO
 from hicodet.hicodet import HICODet
 
 import pocket
-from pocket.core import LearningEngine, DistributedLearningEngine
+from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
 
 def custom_collate(batch):
@@ -191,68 +190,6 @@ def test(net, test_loader):
         meter.append(scores, interactions, labels)
 
     return meter.eval()
-
-class CustomisedLE(LearningEngine):
-    def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
-        super().__init__(net, None, train_loader, **kwargs)
-        self.val_loader = val_loader
-        self.num_classes = num_classes
-
-    def _on_start(self):
-        self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-        self.timer = HandyTimer(maxlen=2)
-
-    def _on_each_iteration(self):
-        self._state.optimizer.zero_grad()
-        output = self._state.net(
-            *self._state.inputs, targets=self._state.targets
-        )
-        if output is None:
-            return
-        self._state.loss = output.pop()
-        self._state.loss.backward()
-        self._state.optimizer.step()
-
-        for result in output:
-            self.meter.append(
-                result['scores'],
-                result['prediction'],
-                result['labels']
-            )
-
-    def _on_end_epoch(self):
-        # Time the computation of mAP on training set
-        with self.timer:
-            ap_train = self.meter.eval()
-        # Run validation and compute mAP
-        with self.timer:
-            ap_val = self.validate()
-        # Print performance and time
-        print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
-            "validation mAP: {:.4f}, total time: {:.2f}s".format(
-                self._state.epoch, ap_train.mean().item(), self.timer[0],
-                ap_val.mean().item(), self.timer[1]
-        ))
-        self.meter.reset()
-        super()._on_end_epoch()
-
-    @torch.no_grad()
-    def validate(self):
-        self._state.net.eval()
-        meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-        for batch in tqdm(self.val_loader):
-            batch_cuda = pocket.ops.relocate_to_cuda(batch)
-            output = self._state.net(*batch_cuda)
-            if output is None:
-                continue
-            for result in output:
-                meter.append(
-                    result['scores'],
-                    result['prediction'],
-                    result['labels']
-                )
-
-        return meter.eval()
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
