@@ -340,7 +340,24 @@ class InteractionHead(Module):
         return results
 
 class MultiBranchFusion(nn.Module):
-    def __init__(self, appearance_size, spatial_size, representation_size, cardinality):
+    """
+    Multi-branch fusion module
+
+    Parameters:
+    -----------
+    appearance_size: int
+        Size of the appearance features
+    spatial_size: int
+        Size of the spatial features
+    representation_size: int
+        Size of the intermediate representations
+    cardinality: int
+        The number of homogeneous branches
+    """
+    def __init__(self,
+        appearance_size: int, spatial_size: int,
+        representation_size: int, cardinality: int
+    ) -> None:
         super().__init__()
         self.cardinality = cardinality
 
@@ -360,7 +377,7 @@ class MultiBranchFusion(nn.Module):
             nn.Linear(sub_repr_size, representation_size)
             for _ in range(cardinality)
         ])
-    def forward(self, appearance, spatial):
+    def forward(self, appearance: Tensor, spatial: Tensor) -> Tensor:
         return F.relu(torch.stack([
             fc_3(F.relu(fc_1(appearance) * fc_2(spatial)))
             for fc_1, fc_2, fc_3
@@ -368,7 +385,29 @@ class MultiBranchFusion(nn.Module):
         ]).sum(dim=0))
 
 class MessageMBF(MultiBranchFusion):
-    def __init__(self, appearance_size, spatial_size, representation_size, node_type, cardinality):
+    """
+    MBF for the computation of anisotropic messages
+
+    Parameters:
+    -----------
+    appearance_size: int
+        Size of the appearance features
+    spatial_size: int
+        Size of the spatial features
+    representation_size: int
+        Size of the intermediate representations
+    node_type: str
+        Nature of the sending node. Choose between `human` amd `object`
+    cardinality: int
+        The number of homogeneous branches
+    """
+    def __init__(self,
+        appearance_size: int,
+        spatial_size: int,
+        representation_size: int,
+        node_type: str,
+        cardinality: int
+    ) -> None:
         super().__init__(appearance_size, spatial_size, representation_size, cardinality)
 
         if node_type == 'human':
@@ -378,7 +417,7 @@ class MessageMBF(MultiBranchFusion):
         else:
             raise ValueError("Unknown node type \"{}\"".format(node_type))
 
-    def _forward_human_nodes(self, appearance, spatial):
+    def _forward_human_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
         n_h, n = spatial.shape[:2]
         assert len(appearance) == n_h, "Incorrect size of dim0 for appearance features"
         return torch.stack([
@@ -387,7 +426,7 @@ class MessageMBF(MultiBranchFusion):
                 * fc_2(spatial).permute([1, 0, 2])
             )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0)
-    def _forward_object_nodes(self, appearance, spatial):
+    def _forward_object_nodes(self, appearance: Tensor, spatial: Tensor) -> Tensor:
         n_h, n = spatial.shape[:2]
         assert len(appearance) == n, "Incorrect size of dim0 for appearance features"
         return torch.stack([
@@ -397,7 +436,7 @@ class MessageMBF(MultiBranchFusion):
             )) for fc_1, fc_2, fc_3 in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0)
 
-    def forward(self, *args):
+    def forward(self, *args) -> Tensor:
         return self._forward_method(*args)
 
 class GraphHead(nn.Module):
