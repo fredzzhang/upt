@@ -79,7 +79,6 @@ def main(rank, args):
         num_iterations=args.num_iter, postprocess=False,
         max_human=args.max_human, max_object=args.max_object,
         box_score_thresh=args.box_score_thresh,
-        gamma=args.gamma,
         distributed=True
     )
 
@@ -157,7 +156,6 @@ if __name__ == '__main__':
     parser.add_argument('--lr-decay', default=0.1, type=float,
                         help="The multiplier by which the learning rate is reduced")
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--gamma', default=0.5, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
     parser.add_argument('--milestones', nargs='+', default=[10,], type=int,
