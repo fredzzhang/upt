@@ -104,14 +104,14 @@ bash download_checkpoint.sh
 2. Test a model
 ```bash
 cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0 python test.py --model-path checkpoints/weights-hicodet-b32h16e11.pt
+CUDA_VISIBLE_DEVICES=0 python test.py --model-path checkpoints/scg_1e-4_b32h16e7_hicodet_e2e.pt
 ```
 By default, detections from a pre-trained detector is used. To change sources of detections, use the argument `--detection-dir`, e.g. `--detection-dir hicodet/detections/test2015_gt` to select ground truth detections. Fine-tuned detections (if you downloaded them) are available under `hicodet/detections`.
 
 3. Cache detections for Matlab evaluation following [HO-RCNN](https://github.com/ywchao/ho-rcnn) (optional)
 ```bash
 cd /path/to/spatio-attentive-graphs
-CUDA_VISIBLE_DEVICES=0 python cache.py --model-path checkpoints/weights-hicodet-b32h16e11.pt
+CUDA_VISIBLE_DEVICES=0 python cache.py --model-path checkpoints/scg_1e-4_b32h16e7_hicodet_e2e.pt
 ```
 By default, 80 `.mat` files, one for each object class, will be cached in a directory named `matlab`. Use the `--cache-dir` argument to change the cache directory. To change sources of detections, refer to the use of `--detection-dir` in the previous section.
 
