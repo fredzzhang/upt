@@ -10,8 +10,9 @@ Australian Centre for Robotic Vision
 import torch
 import torchvision.ops.boxes as box_ops
 
-from torch import nn
+from torch import nn, Tensor
 from torchvision.ops._utils import _cat
+from typing import Optional, List, Tuple
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import transform
 
@@ -23,13 +24,18 @@ from interaction_head import InteractionHead, GraphHead
 class GenericHOINetwork(nn.Module):
     """A generic architecture for HOI classification
 
-    Arguments:
-        backbone(nn.Module)
-        interaction_head(nn.Module)
-        transform(nn.Module)
-        postprocess(bool): If True, rescale bounding boxes to original image size
+    Parameters:
+    -----------
+        backbone: nn.Module
+        interaction_head: nn.Module
+        transform: nn.Module
+        postprocess: bool
+            If True, rescale bounding boxes to original image size
     """
-    def __init__(self, backbone, interaction_head, transform, postprocess=True):
+    def __init__(self,
+        backbone: nn.Module, interaction_head: nn.Module,
+        transform: nn.Module, postprocess: bool = True
+    ) -> None:
         super().__init__()
         self.backbone = backbone
         self.interaction_head = interaction_head
@@ -37,7 +43,14 @@ class GenericHOINetwork(nn.Module):
 
         self.postprocess = postprocess
 
-    def preprocess(self, images, detections, targets=None):
+    def preprocess(self,
+        images: List[Tensor],
+        detections: List[dict],
+        targets: Optional[List[dict]] = None
+    ) -> Tuple[
+        List[Tensor], List[dict],
+        List[dict], List[Tuple[int, int]]
+    ]:
         original_image_sizes = [img.shape[-2:] for img in images]
         images, targets = self.transform(images, targets)
 
@@ -50,12 +63,21 @@ class GenericHOINetwork(nn.Module):
 
         return images, detections, targets, original_image_sizes
 
-    def forward(self, images, detections, targets=None):
+    def forward(self,
+        images: List[Tensor],
+        detections: List[dict],
+        targets: Optional[List[dict]] = None
+    ) -> List[dict]:
         """
-        Arguments:
-            images(list[Tensor])
-            detections(list[dict])
-            targets(list[dict])
+        Parameters:
+        -----------
+            images: List[Tensor]
+            detections: List[dict]
+            targets: List[dict]
+
+        Returns:
+        --------
+            results: List[dict]
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
@@ -75,20 +97,6 @@ class GenericHOINetwork(nn.Module):
             )
         else:
             return results
-
-class BoxPairPredictor(nn.Module):
-    def __init__(self, input_size, representation_size, num_classes):
-        super().__init__()
-
-        self.predictor = nn.Sequential(
-            nn.Linear(input_size, representation_size),
-            nn.ReLU(),
-            nn.Linear(representation_size, representation_size),
-            nn.ReLU(),
-            nn.Linear(representation_size, num_classes)
-        )
-    def forward(self, x):
-        return self.predictor(x)
 
 class SpatioAttentiveGraph(GenericHOINetwork):
     def __init__(self,
@@ -148,7 +156,6 @@ class SpatioAttentiveGraph(GenericHOINetwork):
             box_pair_predictor=box_pair_predictor,
             num_classes=num_classes,
             human_idx=human_idx,
-            gamma=gamma,
             box_nms_thresh=box_nms_thresh,
             box_score_thresh=box_score_thresh,
             max_human=max_human,
