@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader
 
 import pocket
 
-from models import SpatioAttentiveGraph
 from utils import DataFactory, custom_collate
+from models import SpatiallyConditionedGraph as SCG
 
 def inference_hicodet(net, dataloader, coco2hico, cache_dir):
     dataset = dataloader.dataset.dataset
@@ -165,7 +165,7 @@ def main(args):
         object_to_target = dataloader.dataset.dataset.object_to_action
         human_idx = 1
         num_classes = 24
-    net = SpatioAttentiveGraph(
+    net = SCG(
         object_to_target, human_idx, num_classes=num_classes,
         num_iterations=args.num_iter,
         max_human=args.max_human, max_object=args.max_object,

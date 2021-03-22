@@ -98,7 +98,7 @@ class GenericHOINetwork(nn.Module):
         else:
             return results
 
-class SpatioAttentiveGraph(GenericHOINetwork):
+class SpatiallyConditionedGraph(GenericHOINetwork):
     def __init__(self,
         object_to_action: List[list],
         human_idx: int,
