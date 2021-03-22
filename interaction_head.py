@@ -339,7 +339,7 @@ class InteractionHead(Module):
 
         return results
 
-class MultiBranchFusion(nn.Module):
+class MultiBranchFusion(Module):
     """
     Multi-branch fusion module
 
@@ -439,16 +439,39 @@ class MessageMBF(MultiBranchFusion):
     def forward(self, *args) -> Tensor:
         return self._forward_method(*args)
 
-class GraphHead(nn.Module):
+class GraphHead(Module):
+    """
+    Graphical model head
+
+    Parameters:
+    -----------
+    output_channels: int
+        Number of output channels of the backbone
+    roi_pool_size: int
+        Spatial resolution of the pooled output
+    node_encoding_size: int
+        Size of the node embeddings
+    num_cls: int
+        Number of targe classes
+    human_idx: int
+        The index of human/person class in all objects
+    object_class_to_target_class: List[list]
+        The mapping (potentially one-to-many) from objects to target classes
+    fg_iou_thresh: float, default: 0.5
+        The IoU threshold to identify a positive example
+    num_iter: int, default 2
+        Number of iterations of the message passing process
+    """
     def __init__(self,
-                out_channels,
-                roi_pool_size,
-                node_encoding_size, 
-                representation_size, 
-                num_cls, human_idx,
-                object_class_to_target_class,
-                fg_iou_thresh=0.5,
-                num_iter=1):
+        out_channels: int,
+        roi_pool_size: int,
+        node_encoding_size: int, 
+        representation_size: int, 
+        num_cls: int, human_idx: int,
+        object_class_to_target_class: List[list],
+        fg_iou_thresh: float = 0.5,
+        num_iter: int = 2
+    ) -> None:
 
         super().__init__()
 
@@ -515,16 +538,11 @@ class GraphHead(nn.Module):
             representation_size, cardinality=16
         )
 
-    def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
-        """
-        Arguements:
-            boxes_h(Tensor[N, 4])
-            boxes_o(Tensor[N, 4])
-            targets(dict[Tensor]): Targets in an image with the following keys
-                "boxes_h": Tensor[N, 4]
-                "boxes_o": Tensor[N, 4)
-                "labels": Tensor[N]
-        """
+    def associate_with_ground_truth(self,
+        boxes_h: Tensor,
+        boxes_o: Tensor,
+        targets: List[dict]
+    ) -> Tensor:
         n = boxes_h.shape[0]
         labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
 
@@ -537,21 +555,28 @@ class GraphHead(nn.Module):
 
         return labels
 
-    def compute_prior_scores(self, x, y, scores, object_class):
+    def compute_prior_scores(self,
+        x: Tensor, y: Tensor,
+        scores: Tensor,
+        object_class: Tensor
+    ) -> Tensor:
         """
-        Arguments:
-            x(Tensor[M]): Indices of human boxes (paired)
-            y(Tensor[M]): Indices of object boxes (paired)
-            scores(Tensor[N])
-            object_class(Tensor[N])
+        Parameters:
+        -----------
+            x: Tensor[M]
+                Indices of human boxes (paired)
+            y: Tensor[M]
+                Indices of object boxes (paired)
+            scores: Tensor[N]
+                Object detection scores (before pairing)
+            object_class: Tensor[N]
+                Object class indices (before pairing)
         """
         prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
-        if self.training:
-            p = 1.0
-        else:
-            p = 2.8
+        # Raise the power of object detection scores during inference
+        p = 1.0 if self.training else 2.8
         s_h = scores[x].pow(p)
         s_o = scores[y].pow(p)
 
@@ -570,28 +595,43 @@ class GraphHead(nn.Module):
         return torch.stack([prior_h, prior_o])
 
     def forward(self,
-        features, image_shapes, box_features, box_coords,
-        box_labels, box_scores, targets=None
-    ):
+        features: OrderedDict, image_shapes: List[Tuple[int, int]],
+        box_features: Tensor, box_coords: List[Tensor],
+        box_labels: List[Tensor], box_scores: List[Tensor],
+        targets: Optional[List[dict]] = None
+    ) -> Tuple[
+        List[Tensor], List[Tensor], List[Tensor],
+        List[Tensor], List[Tensor], List[Tensor]
+    ]:
         """
-        Arguments:
-            features(OrderedDict[Tensor]): Image pyramid with different levels
-            box_features(Tensor[M, R])
-            image_shapes(List[Tuple[height, width]])
-            box_coords(List[Tensor])
-            box_labels(List[Tensor])
-            box_scores(List[Tensor])
-            targets(list[dict]): Interaction targets with the following keys
-                "boxes_h": Tensor[N, 4]
-                "boxes_o": Tensor[N, 4]
-                "labels": Tensor[N]
+        Parameters:
+        -----------
+            features: OrderedDict
+                Feature maps returned by FPN
+            box_features: Tensor
+                (N, C, P, P) Pooled box features
+            image_shapes: List[Tuple[int, int]]
+                Image shapes, heights followed by widths
+            box_coords: List[Tensor]
+                Bounding box coordinates organised by images
+            box_labels: List[Tensor]
+                Bounding box object types organised by images
+            box_scores: List[Tensor]
+                Bounding box scores organised by images
+            targets: List[dict]
+                Interaction targets with the following keys
+                `boxes_h`: Tensor[G, 4]
+                `boxes_o`: Tensor[G, 4]
+                `labels`: Tensor[G]
+
         Returns:
-            all_box_pair_features(list[Tensor])
-            all_boxes_h(list[Tensor])
-            all_boxes_o(list[Tensor])
-            all_object_class(list[Tensor])
-            all_labels(list[Tensor])
-            all_prior(list[Tensor])
+        --------
+            all_box_pair_features: List[Tensor]
+            all_boxes_h: List[Tensor]
+            all_boxes_o: List[Tensor]
+            all_object_class: List[Tensor]
+            all_labels: List[Tensor]
+            all_prior: List[Tensor]
         """
         if self.training:
             assert targets is not None, "Targets should be passed during training"
