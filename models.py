@@ -100,29 +100,32 @@ class GenericHOINetwork(nn.Module):
 
 class SpatioAttentiveGraph(GenericHOINetwork):
     def __init__(self,
-            object_to_action, human_idx,
-            # Backbone parameters
-            backbone_name="resnet50", pretrained=True,
-            # Pooler parameters
-            output_size=7, sampling_ratio=2,
-            # Box pair head parameters
-            node_encoding_size=1024,
-            representation_size=1024,
-            num_classes=117,
-            box_score_thresh=0.2,
-            gamma=0.5,
-            fg_iou_thresh=0.5,
-            num_iterations=1,
-            distributed=False,
-            # Transformation parameters
-            min_size=800, max_size=1333,
-            image_mean=None, image_std=None,
-            postprocess=True,
-            # Preprocessing parameters
-            box_nms_thresh=0.5,
-            max_human=15,
-            max_object=15
-            ):
+        object_to_action: List[list],
+        human_idx: int,
+        # Backbone parameters
+        backbone_name: str = "resnet50",
+        pretrained: bool = True,
+        # Pooler parameters
+        output_size: int = 7,
+        sampling_ratio: int = 2,
+        # Box pair head parameters
+        node_encoding_size: int = 1024,
+        representation_size: int = 1024,
+        num_classes: int = 117,
+        box_score_thresh: float = 0.2,
+        fg_iou_thresh: float = 0.5,
+        num_iterations: int = 2,
+        distributed: bool = False,
+        # Transformation parameters
+        min_size: int = 800, max_size: int = 1333,
+        image_mean: Optional[List[float]] = None,
+        image_std: Optional[List[float]] = None,
+        postprocess: bool = True,
+        # Preprocessing parameters
+        box_nms_thresh: float = 0.5,
+        max_human: int = 15,
+        max_object: int = 15
+    ) -> None:
 
         detector = models.fasterrcnn_resnet_fpn(backbone_name,
             pretrained=pretrained)
