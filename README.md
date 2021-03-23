@@ -159,8 +159,7 @@ You can either add it into the evaluation code or save it as a seperate file to 
 ### HICO-DET
 ```bash
 cd /path/to/spatio-attentive-graphs
-python main.py --world-size 8 --random-seed &>log &
-python main_dist.py --world-size 8 --learning-rate 0.008 --print-interval 300 &>log &
+python main.py --world-size 8 &>log &
 ```
 Specify the number of GPUs to use with the argument `--world-size`. The default sub-batch size is `4` (per GPU). The provided model was trained with 8 GPUs, with an effective batch size of `32`. __Reducing the effective batch size could result in slightly inferior performance__. The default learning rate for batch size of 32 is `0.0001`. As a rule of thumb, scale the learning rate proportionally when changing the batch size, e.g. `0.00005` for batch size of `16`. It is recommended to redirect `stdout` and `stderr` to a file to save the training log (as indicated by `&>log`). To check the progress, run `cat log | grep mAP`, or alternatively you can go through the log with `vim log`. Also, the mAP logged follows a slightly different protocol. It does __NOT__ necessarily correlate with the mAP that the community reports. It only serves as a diagnostic tool. The true performance of the model requires running a seperate test as shown in the previous section. By default, checkpoints will be saved under `checkpoints` in the current directory. For more arguments, run `python main.py --help` to find out. We follow the early stopping training strategy, and have concluded (using a validation set split from the training set) that the model at epoch `7` should be picked. Training on 8 GeForce GTX TITAN X devices takes about `5` hours.
 
