@@ -146,9 +146,9 @@ if __name__ == '__main__':
     parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
                         help="Number of iterations to run message passing")
-    parser.add_argument('--num-epochs', default=15, type=int)
+    parser.add_argument('--num-epochs', default=8, type=int)
     parser.add_argument('--random-seed', default=1, type=int)
-    parser.add_argument('--learning-rate', default=0.001, type=float)
+    parser.add_argument('--learning-rate', default=0.0001, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--weight-decay', default=1e-4, type=float)
     parser.add_argument('--batch-size', default=4, type=int,
@@ -158,10 +158,10 @@ if __name__ == '__main__':
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--max-human', default=15, type=int)
     parser.add_argument('--max-object', default=15, type=int)
-    parser.add_argument('--milestones', nargs='+', default=[10,], type=int,
+    parser.add_argument('--milestones', nargs='+', default=[6,], type=int,
                         help="The epoch number when learning rate is reduced")
     parser.add_argument('--num-workers', default=4, type=int)
-    parser.add_argument('--print-interval', default=2000, type=int)
+    parser.add_argument('--print-interval', default=300, type=int)
     parser.add_argument('--checkpoint-path', default='', type=str)
     parser.add_argument('--cache-dir', type=str, default='./checkpoints')
 
