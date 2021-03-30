@@ -1,4 +1,4 @@
-# The repo is undergoing a clean-up at the moment...
+# Spatially Conditioned Graphs
 Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
 
 <img src="./assets/bipartite_graph.png" alt="bipartite_graph" height="200" align="left"/>
