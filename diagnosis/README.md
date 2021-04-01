@@ -1,5 +1,12 @@
 # Diagnostic Tools
 
+## Demonstration on an image
+
+```bash
+python demo.py --model-path /path/to/checkpoint --box-score-thresh 0.5 --index 3575
+```
+The script visualises detected boxes in an image with indices overlayed, and outputs the predicted scores for each action and each box pair with a valid object. Use the argument `--index` to change images and `--detection-dir` to change the source of detections. For more details of the use of arguments, run `python demo.py --help`.
+
 ## Plot learning curves
 
 ```bash
@@ -23,11 +30,3 @@ python generate_html_page.py --image-dir ./cache/class_000/examples
 ```
 
 This will create a file called `table.html` in your current directory. Open the file to visualise box pairs in a web page. Use the argument `--image-dir` to select different interaction classes. For more layout options, refer to the documentation for class [_pocket.utils.ImageHTMLTable_](https://github.com/fredzzhang/pocket/tree/master/pocket/utils) and make corresponding changes in _generate_html_page.py_
-
-## Image-wise human-object pair visualisation
-
-```bash
-python visualise_one.py --dir /path/to/mat/files --image-idx 2000 --interaction 245
-```
-
-As a lightweight alternative, this script generates visualisations of all human-object pairs of the specified class in an image. By default, visualisations are cached under `./cache` in the current directory, with the file names being the confidence scores.
