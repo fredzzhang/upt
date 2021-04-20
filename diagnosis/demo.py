@@ -131,8 +131,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train an interaction head")
-    parser.add_argument('--data-root', default='hicodet', type=str)
-    parser.add_argument('--detection-dir', default='hicodet/detections/test2015',
+    parser.add_argument('--data-root', default='../hicodet', type=str)
+    parser.add_argument('--detection-dir', default='../hicodet/detections/test2015',
                         type=str, help="Directory where detection files are stored")
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--num-iter', default=2, type=int,
