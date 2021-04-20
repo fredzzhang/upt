@@ -8,6 +8,7 @@ Australian Centre for Robotic Vision
 """
 
 import os
+import sys
 import torch
 import pocket
 import argparse
@@ -15,6 +16,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patheffects as peff
+
+sys.path.append('..')
 
 from utils import custom_collate, DataFactory
 from models import SpatiallyConditionedGraph as SCG
