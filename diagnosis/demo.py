@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patheffects as peff
 
-sys.path.append('..')
+sys.path.append('/'.join(os.path.abspath(sys.argv[0]).split('/')[:-2]))
 
 from utils import custom_collate, DataFactory
 from models import SpatiallyConditionedGraph as SCG
