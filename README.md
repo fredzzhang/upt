@@ -1,9 +1,8 @@
 # Spatially Conditioned Graphs
 Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
 
-<img src="./assets/bipartite_graph.png" alt="bipartite_graph" height="200" align="left"/>
-<img src="./assets/zoom_in.png" alt="zoom_in" height="200" align="left"/>
-<img src="./assets/multibranch_fusion.png" alt="multibranch_fusion" height="200" align="center"/>
+<img src="./assets/scg.png" alt="graph" height="200" align="left"/>
+<img src="./assets/mbf.png" alt="multibranch_fusion" height="200" align="center"/>
 
 ## Citation
 
@@ -24,6 +23,7 @@ If you find this repository useful for your research, please kindly cite our pap
 - [Data Utilities](#data-utilities)
     * [HICO-DET](#hico-det)
     * [V-COCO](#v-coco)
+- [Demonstration](#demonstration)
 - [Testing](#testing)
     * [HICO-DET](#hico-det-1)
     * [V-COCO](#v-coco-1)
@@ -37,6 +37,10 @@ If you find this repository useful for your research, please kindly cite our pap
 1. Download the repository with `git clone https://github.com/fredzzhang/spatially-conditioned-graphs`
 2. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket)
 3. Make sure the environment you created for Pocket is activated. You are good to go!
+
+## Demonstration
+
+To generate qualitative results shown in the paper, please follow instructions in the [diagnosis](https://github.com/fredzzhang/spatially-conditioned-graphs/tree/main/diagnosis) package at `spatially-conditioned-graphs/diagnosis/`.
 
 ## Data Utilities
 
@@ -159,12 +163,19 @@ You can either add it into the evaluation code or save it as a seperate file to 
 ### HICO-DET
 ```bash
 cd /path/to/spatially-conditioned-graphs
-python main.py --world-size 8 &>log &
+python main.py --world-size 8 --cache-dir checkpoints/hicodet &>log &
 ```
 Specify the number of GPUs to use with the argument `--world-size`. The default sub-batch size is `4` (per GPU). The provided model was trained with 8 GPUs, with an effective batch size of `32`. __Reducing the effective batch size could result in slightly inferior performance__. The default learning rate for batch size of 32 is `0.0001`. As a rule of thumb, scale the learning rate proportionally when changing the batch size, e.g. `0.00005` for batch size of `16`. It is recommended to redirect `stdout` and `stderr` to a file to save the training log (as indicated by `&>log`). To check the progress, run `cat log | grep mAP`, or alternatively you can go through the log with `vim log`. Also, the mAP logged follows a slightly different protocol. It does __NOT__ necessarily correlate with the mAP that the community reports. It only serves as a diagnostic tool. The true performance of the model requires running a seperate test as shown in the previous section. By default, checkpoints will be saved under `checkpoints` in the current directory. For more arguments, run `python main.py --help` to find out. We follow the early stopping training strategy, and have concluded (using a validation set split from the training set) that the model at epoch `7` should be picked. Training on 8 GeForce GTX TITAN X devices takes about `5` hours.
 
 ### V-COCO
-Code for V-COCO is being cleaned up at the moment. Instructions will be released soon.
+```bash
+cd /path/to/spatially-conditioned-graphs
+python main.py --world-size 8 \
+    --dataset vcoco --partitions trainval val --data-root vcoco \
+    --train-detection-dir vcoco/detections/trainval \
+    --val-detection-dir vcoco/detections/trainval \
+    --print-interval 20 --cache-dir checkpoints/vcoco &>log &
+```
 
 ## Contact
 
