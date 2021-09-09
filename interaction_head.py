@@ -15,7 +15,7 @@ import torchvision.ops.boxes as box_ops
 from torch.nn import Module
 from torch import nn, Tensor
 from pocket.ops import Flatten
-from typing import Optional, List, Tuple
+from typing import Match, Optional, List, Tuple
 from collections import OrderedDict
 
 from ops import compute_spatial_encodings, binary_focal_loss
@@ -576,24 +576,6 @@ class GraphHead(Module):
             nn.ReLU()
         )
 
-        # Compute adjacency matrix
-        self.adjacency = nn.Linear(representation_size, 1)
-
-        # Compute messages
-        self.sub_to_obj = MessageMBF(
-            node_encoding_size, 1024,
-            representation_size, node_type='human',
-            cardinality=16
-        )
-        self.obj_to_sub = MessageMBF(
-            node_encoding_size, 1024,
-            representation_size, node_type='object',
-            cardinality=16
-        )
-
-        self.norm_h = nn.LayerNorm(node_encoding_size)
-        self.norm_o = nn.LayerNorm(node_encoding_size)
-
         # Map spatial encodings to the same dimension as appearance features
         self.spatial_head = nn.Sequential(
             nn.Linear(36, 128),
@@ -602,6 +584,11 @@ class GraphHead(Module):
             nn.ReLU(),
             nn.Linear(256, 1024),
             nn.ReLU(),
+        )
+
+        self.matching_layer = MatchingLayer(
+            hidden_size=representation_size,
+            return_weights=True
         )
 
         # Spatial attention head
@@ -747,15 +734,13 @@ class GraphHead(Module):
                 raise ValueError("Human detections are not permuted to the top")
 
             node_encodings = box_features[counter: counter+n]
-            # Duplicate human nodes
-            h_node_encodings = node_encodings[:n_h]
-            # Get the pairwise index between every human and object instance
+            # Get the pairwise indices
             x, y = torch.meshgrid(
-                torch.arange(n_h, device=device),
+                torch.arange(n, device=device),
                 torch.arange(n, device=device)
             )
-            # Remove pairs consisting of the same human instance
-            x_keep, y_keep = torch.nonzero(x != y).unbind(1)
+            # Valid human-object pairs
+            x_keep, y_keep = torch.nonzero(x != y and x <= n_h).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
                 raise ValueError("There are no valid human-object pairs")
@@ -769,43 +754,11 @@ class GraphHead(Module):
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
-            box_pair_spatial_reshaped = box_pair_spatial.reshape(n_h, n, -1)
+            box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
 
-            adjacency_matrix = torch.ones(n_h, n, device=device)
+            # Run the matching layer
             for _ in range(self.num_iter):
-                # Compute weights of each edge
-                weights = self.attention_head(
-                    torch.cat([
-                        h_node_encodings[x],
-                        node_encodings[y]
-                    ], 1),
-                    box_pair_spatial
-                )
-                adjacency_matrix = self.adjacency(weights).reshape(n_h, n)
-
-                # Update human nodes
-                messages_to_h = F.relu(torch.sum(
-                    adjacency_matrix.softmax(dim=1)[..., None] *
-                    self.obj_to_sub(
-                        node_encodings,
-                        box_pair_spatial_reshaped
-                    ), dim=1)
-                )
-                h_node_encodings = self.norm_h(
-                    h_node_encodings + messages_to_h
-                )
-
-                # Update object nodes (including human nodes)
-                messages_to_o = F.relu(torch.sum(
-                    adjacency_matrix.t().softmax(dim=1)[..., None] *
-                    self.sub_to_obj(
-                        h_node_encodings,
-                        box_pair_spatial_reshaped
-                    ), dim=1)
-                )
-                node_encodings = self.norm_o(
-                    node_encodings + messages_to_o
-                )
+                node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
@@ -815,7 +768,7 @@ class GraphHead(Module):
             all_box_pair_features.append(torch.cat([
                 self.attention_head(
                     torch.cat([
-                        h_node_encodings[x_keep],
+                        node_encodings[x_keep],
                         node_encodings[y_keep]
                         ], 1),
                     box_pair_spatial_reshaped[x_keep, y_keep]
