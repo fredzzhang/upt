@@ -439,6 +439,85 @@ class MessageMBF(MultiBranchFusion):
     def forward(self, *args) -> Tensor:
         return self._forward_method(*args)
 
+class ModifiedTransformerLayer(Module):
+    def __init__(self,
+        hidden_size: int = 1024,
+        num_heads: int = 8,
+        return_weights: bool = False,
+    ):
+        super().__init__()
+        if hidden_size % num_heads != 0:
+            raise ValueError(
+                f"The given hidden size {hidden_size} should be divisible by "
+                f"the number of attention heads {num_heads}."
+            )
+        self.sub_hidden_size = int(hidden_size / num_heads)
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.return_weights = return_weights
+
+        self.unary = nn.Linear(hidden_size, hidden_size)
+        self.pairwise = nn.Linear(hidden_size, hidden_size)
+        self.attn = nn.ModuleList([nn.Linear(3 * self.sub_hidden_size, 1) for _ in range(num_heads)])
+        self.message = nn.ModuleList([nn.Linear(self.sub_hidden_size, self.sub_hidden_size) for _ in range(num_heads)])
+        self.aggregate = nn.Linear(hidden_size, hidden_size)
+
+    def reshape(self, x: Tensor) -> Tensor:
+        new_x_shape = x.size()[:-1] + (
+            self.num_heads,
+            self.sub_hidden_size
+        )
+        x = x.view(*new_x_shape)
+        if len(new_x_shape) == 3:
+            return x.permute(1, 0, 2)
+        elif len(new_x_shape) == 4:
+            return x.permute(2, 0, 1, 3)
+        else:
+            raise ValueError("Incorrect tensor shape")
+
+    def forward(self, x: Tensor, y: Tensor):
+        device = x.device
+        n = len(x)
+
+        u = F.relu(self.unary(x))
+        p = F.relu(self.pairwise(y))
+
+        u_r = self.reshape(u)
+        p_r = self.reshape(p)
+
+        i, j = torch.meshgrid(
+            torch.arange(n, device=device),
+            torch.arange(n, device=device)
+        )
+
+        attn_features = torch.cat([
+            u_r[:, i], u_r[:, j], p_r
+        ], dim=-1)
+        weights = [
+            F.softmax(l(f), dim=-2) for f, l
+            in zip(attn_features, self.attn)
+        ]
+        u_r_repeat = u_r.unsqueeze(dim=2).repeat(1, 1, n, 1)
+        messages = [
+            l(f_1 * f_2) for f_1, f_2, l
+            in zip(u_r_repeat, p_r, self.message)
+        ]
+
+        aggreagted_messages = self.aggregate(F.relu(
+            torch.cat([
+                (w * m).sum(dim=-2) for w, m
+                in zip(weights, messages)
+            ], dim=-1)
+        ))
+        x = x + aggreagted_messages
+
+        if self.return_weights:
+            attn = weights
+        else:
+            attn = None
+
+        return x, attn
+
 class GraphHead(Module):
     """
     Graphical model head
