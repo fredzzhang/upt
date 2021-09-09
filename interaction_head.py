@@ -439,7 +439,7 @@ class MessageMBF(MultiBranchFusion):
     def forward(self, *args) -> Tensor:
         return self._forward_method(*args)
 
-class ModifiedTransformerLayer(Module):
+class MatchingLayer(Module):
     def __init__(self,
         hidden_size: int = 1024,
         num_heads: int = 8,
@@ -461,6 +461,7 @@ class ModifiedTransformerLayer(Module):
         self.attn = nn.ModuleList([nn.Linear(3 * self.sub_hidden_size, 1) for _ in range(num_heads)])
         self.message = nn.ModuleList([nn.Linear(self.sub_hidden_size, self.sub_hidden_size) for _ in range(num_heads)])
         self.aggregate = nn.Linear(hidden_size, hidden_size)
+        self.norm = nn.LayerNorm(hidden_size)
 
     def reshape(self, x: Tensor) -> Tensor:
         new_x_shape = x.size()[:-1] + (
@@ -509,7 +510,7 @@ class ModifiedTransformerLayer(Module):
                 in zip(weights, messages)
             ], dim=-1)
         ))
-        x = x + aggreagted_messages
+        x = self.norm(x + aggreagted_messages)
 
         if self.return_weights:
             attn = weights
