@@ -55,7 +55,7 @@ def visualise_entire_image(dataset, output):
     attn_maps = output['attn_maps']
 
     _, axe = plt.subplots(2, 4)
-    axe = np.concatenate(ax)
+    axe = np.concatenate(axe)
     for ax, attn in zip(axe, attn_maps[0]):
         ax.imshow(attn)
 
