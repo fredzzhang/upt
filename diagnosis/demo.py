@@ -48,9 +48,9 @@ def draw_boxes(ax, boxes):
 
 def visualise_entire_image(dataset, output):
     """Visualise bounding box pairs in the whole image by classes"""
-    bh=output['boxes_h']
-    bo=output['boxes_o']
-    no = len(bo)
+    boxes = output['boxes']
+    bh = output['boxes_h']
+    bo = output['boxes_o']
 
     attn_maps = output['attn_maps']
 
@@ -58,10 +58,6 @@ def visualise_entire_image(dataset, output):
     axe = np.concatenate(axe)
     for ax, attn in zip(axe, attn_maps[0]):
         ax.imshow(attn)
-
-    bbox, inverse = torch.unique(torch.cat([bo, bh]), dim=0, return_inverse=True)
-    idxh = inverse[no:]
-    idxo = inverse[:no]
 
     im = dataset.dataset.load_image(
         os.path.join(
@@ -73,7 +69,6 @@ def visualise_entire_image(dataset, output):
     # Print predicted classes and scores
     scores = output['scores']
     prior = output['prior']
-    index = output['index']
     pred = output['prediction']
     labels = output['labels']
 
@@ -82,18 +77,18 @@ def visualise_entire_image(dataset, output):
         print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
         sample_idx = torch.nonzero(pred == verb).squeeze(1)
         for idx in sample_idx:
-            b_idx = index[idx]
+            idxh = bh[idx]; idxo = bo[idx]
             print(
-                f"({idxh[b_idx].item():<2}, {idxo[b_idx].item():<2}),",
+                f"({idxh.item():<2}, {idxo.item():<2}),",
                 f"score: {scores[idx]:.4f}, prior: {prior[0, idx]:.2f}, {prior[1, idx]:.2f}",
                 f"label: {bool(labels[idx])}"
             )
 
     # Draw the bounding boxes
-    fig = plt.figure()
+    plt.figure()
     plt.imshow(im)
     ax = plt.gca()
-    draw_boxes(ax, bbox)
+    draw_boxes(ax, boxes)
     plt.show()
 
 @torch.no_grad()
