@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patheffects as peff
 
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 sys.path.append('/'.join(os.path.abspath(sys.argv[0]).split('/')[:-2]))
 
 from utils import custom_collate, DataFactory
@@ -54,10 +56,19 @@ def visualise_entire_image(dataset, output):
 
     attn_maps = output['attn_maps']
 
-    _, axe = plt.subplots(2, 4)
-    axe = np.concatenate(axe)
-    for ax, attn in zip(axe, attn_maps[0]):
-        ax.imshow(attn)
+    for i, attn_iter in enumerate(attn_maps):
+        fig, axe = plt.subplots(2, 4)
+        fig.suptitle(f"Attention map in iteration {i}")
+        axe = np.concatenate(axe)
+        for ax, attn in zip(axe, attn_iter):
+            im = ax.imshow(attn)
+            ax.set_xticks(list(range(len(attn))))
+            ax.set_xticklabels(list(range(len(attn))))
+            ax.set_yticks(list(range(len(attn))))
+            ax.set_yticklabels(list(range(len(attn))))
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            fig.colorbar(im, cax=cax)
 
     im = dataset.dataset.load_image(
         os.path.join(
