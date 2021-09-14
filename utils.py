@@ -154,11 +154,11 @@ def test(net, test_loader):
         inputs = pocket.ops.relocate_to_cuda(batch[:-1])
         with torch.no_grad():
             output = net(*inputs)
-        if output is None:
+        if output is None or len(output) == 0:
             continue
 
         # Batch size is fixed as 1 for inference
-        assert len(output) == 1, "Batch size is not 1"
+        assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
         output = pocket.ops.relocate_to_cpu(output[0])
         target = batch[-1][0]
         # Format detections
