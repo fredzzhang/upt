@@ -187,6 +187,7 @@ class InteractionHead(Module):
         logits_p: Tensor,
         logits_s: Tensor,
         prior: List[Tensor],
+        box_coords: List[Tensor],
         boxes_h: List[Tensor],
         boxes_o: List[Tensor],
         object_class: List[Tensor],
@@ -245,17 +246,16 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l, a in zip(
-            weights, scores, prior, boxes_h, boxes_o, object_class, labels, attn_maps
+        for w, s, p, b, b_h, b_o, o, l, a in zip(
+            weights, scores, prior, box_coords, boxes_h, boxes_o, object_class, labels, attn_maps
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
 
             result_dict = dict(
-                boxes_h=b_h, boxes_o=b_o,
-                index=x, prediction=y,
+                boxes=b, boxes_h=b_h[x], boxes_o=b_o[x], prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object=o, prior=p[:, x, y], weights=w, attn_maps=a
+                object=o[x], prior=p[:, x, y], weights=w[x], attn_maps=a
             )
             # If binary labels are provided
             if l is not None:
@@ -327,7 +327,7 @@ class InteractionHead(Module):
 
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
-            boxes_h, boxes_o,
+            box_coords, boxes_h, boxes_o,
             object_class, box_pair_labels, attn_maps
         )
 
@@ -780,8 +780,8 @@ class GraphHead(Module):
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1))
-            all_boxes_h.append(coords[x_keep])
-            all_boxes_o.append(coords[y_keep])
+            all_boxes_h.append(x_keep)
+            all_boxes_o.append(y_keep)
             all_object_class.append(labels[y_keep])
             # The prior score is the product of the object detection scores
             all_prior.append(self.compute_prior_scores(
