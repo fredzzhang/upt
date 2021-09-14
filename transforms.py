@@ -57,10 +57,9 @@ class HOINetworkTransform(transform.GeneralizedRCNNTransform):
             loss = results.pop()
 
         for pred, im_s, o_im_s in zip(results, image_shapes, original_image_sizes):
-            boxes_h, boxes_o = pred['boxes_h'], pred['boxes_o']
-            boxes_h = transform.resize_boxes(boxes_h, im_s, o_im_s)
-            boxes_o = transform.resize_boxes(boxes_o, im_s, o_im_s)
-            pred['boxes_h'], pred['boxes_o'] = boxes_h, boxes_o
+            boxes = pred['boxes']
+            boxes = transform.resize_boxes(boxes, im_s, o_im_s)
+            pred['boxes'] = boxes
 
         if self.training:
             results.append(loss)
