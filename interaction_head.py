@@ -190,7 +190,8 @@ class InteractionHead(Module):
         boxes_h: List[Tensor],
         boxes_o: List[Tensor],
         object_class: List[Tensor],
-        labels: List[Tensor]
+        labels: List[Tensor],
+        attn_maps: List[list]
     ) -> List[dict]:
         """
         Parameters:
@@ -244,8 +245,8 @@ class InteractionHead(Module):
             labels = [None for _ in range(len(num_boxes))]
 
         results = []
-        for w, s, p, b_h, b_o, o, l in zip(
-            weights, scores, prior, boxes_h, boxes_o, object_class, labels
+        for w, s, p, b_h, b_o, o, l, a in zip(
+            weights, scores, prior, boxes_h, boxes_o, object_class, labels, attn_maps
         ):
             # Keep valid classes
             x, y = torch.nonzero(p[0]).unbind(1)
@@ -254,7 +255,7 @@ class InteractionHead(Module):
                 boxes_h=b_h, boxes_o=b_o,
                 index=x, prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object=o, prior=p[:, x, y], weights=w
+                object=o, prior=p[:, x, y], weights=w, attn_maps=a
             )
             # If binary labels are provided
             if l is not None:
@@ -315,7 +316,7 @@ class InteractionHead(Module):
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
 
         box_pair_features, boxes_h, boxes_o, object_class,\
-        box_pair_labels, box_pair_prior = self.box_pair_head(
+        box_pair_labels, box_pair_prior, attn_maps = self.box_pair_head(
             features, image_shapes, box_features,
             box_coords, box_labels, box_scores, targets
         )
@@ -327,7 +328,7 @@ class InteractionHead(Module):
         results = self.postprocess(
             logits_p, logits_s, box_pair_prior,
             boxes_h, boxes_o,
-            object_class, box_pair_labels
+            object_class, box_pair_labels, attn_maps
         )
 
         if self.training:
@@ -712,6 +713,7 @@ class GraphHead(Module):
         all_boxes_h = []; all_boxes_o = []; all_object_class = []
         all_labels = []; all_prior = []
         all_box_pair_features = []
+        all_attn_data = []
         for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
             n = num_boxes[b_idx]
             device = box_features.device
@@ -757,8 +759,10 @@ class GraphHead(Module):
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
 
             # Run the matching layer
+            attn_all_iter = []
             for _ in range(self.num_iter):
                 node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
+                attn_all_iter.append(attn_data)
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
@@ -784,7 +788,9 @@ class GraphHead(Module):
                 x_keep, y_keep, scores, labels)
             )
 
+            all_attn_data.append(attn_all_iter)
+
             counter += n
 
         return all_box_pair_features, all_boxes_h, all_boxes_o, \
-            all_object_class, all_labels, all_prior
+            all_object_class, all_labels, all_prior, all_attn_data
