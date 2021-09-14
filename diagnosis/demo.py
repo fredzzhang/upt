@@ -52,6 +52,13 @@ def visualise_entire_image(dataset, output):
     bo=output['boxes_o']
     no = len(bo)
 
+    attn_maps = output['attn_maps']
+
+    _, axe = plt.subplots(2, 4)
+    axe = np.concatenate(ax)
+    for ax, attn in zip(axe, attn_maps[0]):
+        ax.imshow(attn)
+
     bbox, inverse = torch.unique(torch.cat([bo, bh]), dim=0, return_inverse=True)
     idxh = inverse[no:]
     idxo = inverse[:no]
