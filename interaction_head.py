@@ -255,7 +255,7 @@ class InteractionHead(Module):
             result_dict = dict(
                 boxes=b, boxes_h=b_h[x], boxes_o=b_o[x], prediction=y,
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object=o[x], prior=p[:, x, y], weights=w[x], attn_maps=a
+                object=o[x], prior=p[:, x, y], weights=w, attn_maps=a
             )
             # If binary labels are provided
             if l is not None:
