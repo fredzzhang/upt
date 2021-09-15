@@ -162,10 +162,10 @@ def test(net, test_loader):
         output = pocket.ops.relocate_to_cpu(output[0])
         target = batch[-1][0]
         # Format detections
-        box_idx = output['index']
-        boxes_h = output['boxes_h'][box_idx]
-        boxes_o = output['boxes_o'][box_idx]
-        objects = output['object'][box_idx]
+        boxes = output['boxes']
+        boxes_h = boxes[output['boxes_h']]
+        boxes_o = boxes[output['boxes_o']]
+        objects = output['object']
         scores = output['scores']
         verbs = output['prediction']
         interactions = torch.tensor([
