@@ -61,11 +61,7 @@ def visualise_entire_image(dataset, output):
         fig.suptitle(f"Attention map in iteration {i}")
         axe = np.concatenate(axe)
         for ax, attn in zip(axe, attn_iter):
-            im = ax.imshow(attn)
-            ax.set_xticks(list(range(len(attn))))
-            ax.set_xticklabels(list(range(len(attn))))
-            ax.set_yticks(list(range(len(attn))))
-            ax.set_yticklabels(list(range(len(attn))))
+            im = ax.imshow(attn, vmin=0, vmax=1)
             divider = make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             fig.colorbar(im, cax=cax)
