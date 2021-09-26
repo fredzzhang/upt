@@ -484,7 +484,9 @@ class MatchingLayer(Module):
         u = F.relu(self.unary(x))
         p = F.relu(self.pairwise(y))
 
+        # Unary features (H, N, L)
         u_r = self.reshape(u)
+        # Pairwise features (H, N, N, L)
         p_r = self.reshape(p)
 
         i, j = torch.meshgrid(
@@ -492,13 +494,16 @@ class MatchingLayer(Module):
             torch.arange(n, device=device)
         )
 
+        # Features used to compute attention (H, N, N, 3L)
         attn_features = torch.cat([
             u_r[:, i], u_r[:, j], p_r
         ], dim=-1)
+        # Attention weights (H,) (N, N, 1)
         weights = [
-            F.softmax(l(f), dim=-2) for f, l
+            F.softmax(l(f), dim=0) for f, l
             in zip(attn_features, self.attn)
         ]
+        # Repeated unary feaures along the third dimension (H, N, N, L)
         u_r_repeat = u_r.unsqueeze(dim=2).repeat(1, 1, n, 1)
         messages = [
             l(f_1 * f_2) for f_1, f_2, l
@@ -507,7 +512,7 @@ class MatchingLayer(Module):
 
         aggreagted_messages = self.aggregate(F.relu(
             torch.cat([
-                (w * m).sum(dim=-2) for w, m
+                (w * m).sum(dim=0) for w, m
                 in zip(weights, messages)
             ], dim=-1)
         ))
