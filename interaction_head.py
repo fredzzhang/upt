@@ -565,7 +565,9 @@ class AttentionLayer(Module):
         u = F.relu(self.unary(x))
         p = F.relu(self.pairwise(y))
 
+        # Unary features (H, N, L)
         u_r = self.reshape(u)
+        # Pairwise features (H, N, N, L)
         p_r = self.reshape(p)
 
         i, j = torch.meshgrid(
@@ -573,11 +575,13 @@ class AttentionLayer(Module):
             torch.arange(n, device=device)
         )
 
+        # Features used to compute attention (H, N, N, 3L)
         attn_features = torch.cat([
             u_r[:, i], u_r[:, j], p_r
         ], dim=-1)
+        # Attention weights (H,) (N, N, 1)
         weights = [
-            l(f) for f, l
+            F.softmax(l(f), dim=0) for f, l
             in zip(attn_features, self.attn)
         ]
 
