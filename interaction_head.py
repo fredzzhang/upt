@@ -18,6 +18,8 @@ from pocket.ops import Flatten
 from typing import Match, Optional, List, Tuple
 from collections import OrderedDict
 
+import pocket
+
 from ops import compute_spatial_encodings, binary_focal_loss
 
 class InteractionHead(Module):
@@ -524,7 +526,62 @@ class MatchingLayer(Module):
             attn = None
 
         return x, attn
+class AttentionLayer(Module):
+    def __init__(self,
+        hidden_size: int = 1024,
+        num_heads: int = 8
+    ):
+        super().__init__()
+        if hidden_size % num_heads != 0:
+            raise ValueError(
+                f"The given hidden size {hidden_size} should be divisible by "
+                f"the number of attention heads {num_heads}."
+            )
+        self.sub_hidden_size = int(hidden_size / num_heads)
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
 
+        self.unary = nn.Linear(hidden_size, hidden_size)
+        self.pairwise = nn.Linear(hidden_size, hidden_size)
+        self.attn = nn.ModuleList([nn.Linear(3 * self.sub_hidden_size, 1) for _ in range(num_heads)])
+
+    def reshape(self, x: Tensor) -> Tensor:
+        new_x_shape = x.size()[:-1] + (
+            self.num_heads,
+            self.sub_hidden_size
+        )
+        x = x.view(*new_x_shape)
+        if len(new_x_shape) == 3:
+            return x.permute(1, 0, 2)
+        elif len(new_x_shape) == 4:
+            return x.permute(2, 0, 1, 3)
+        else:
+            raise ValueError("Incorrect tensor shape")
+
+    def forward(self, x: Tensor, y: Tensor):
+        device = x.device
+        n = len(x)
+
+        u = F.relu(self.unary(x))
+        p = F.relu(self.pairwise(y))
+
+        u_r = self.reshape(u)
+        p_r = self.reshape(p)
+
+        i, j = torch.meshgrid(
+            torch.arange(n, device=device),
+            torch.arange(n, device=device)
+        )
+
+        attn_features = torch.cat([
+            u_r[:, i], u_r[:, j], p_r
+        ], dim=-1)
+        weights = [
+            l(f) for f, l
+            in zip(attn_features, self.attn)
+        ]
+
+        return weights
 class GraphHead(Module):
     """
     Graphical model head
@@ -595,6 +652,9 @@ class GraphHead(Module):
         self.matching_layer = MatchingLayer(
             hidden_size=representation_size,
             return_weights=True
+        )
+        self.attention_layer = AttentionLayer(
+            hidden_size=representation_size
         )
 
         # Spatial attention head
@@ -718,7 +778,7 @@ class GraphHead(Module):
         all_boxes_h = []; all_boxes_o = []; all_object_class = []
         all_labels = []; all_prior = []
         all_box_pair_features = []
-        all_attn_data = []
+        all_attn_data = []; all_pairing_weights = []
         for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
             n = num_boxes[b_idx]
             device = box_features.device
@@ -764,10 +824,8 @@ class GraphHead(Module):
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
 
             # Run the matching layer
-            attn_all_iter = []
-            for _ in range(self.num_iter):
-                node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
-                attn_all_iter.append(attn_data)
+            node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
+            pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped)
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
@@ -793,9 +851,10 @@ class GraphHead(Module):
                 x_keep, y_keep, scores, labels)
             )
 
-            all_attn_data.append(attn_all_iter)
+            all_attn_data.append(attn_data)
+            all_pairing_weights.append(pairing_weights)
 
             counter += n
 
         return all_box_pair_features, all_boxes_h, all_boxes_o, \
-            all_object_class, all_labels, all_prior, all_attn_data
+            all_object_class, all_labels, all_prior, all_attn_data, all_pairing_weights
