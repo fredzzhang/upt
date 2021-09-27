@@ -238,8 +238,8 @@ class InteractionHead(Module):
         """
         num_boxes = [len(b) for b in boxes_h]
 
-        weights = torch.sigmoid(logits_s).squeeze(1)
-        scores = torch.sigmoid(logits_p).mean(0)
+        weights = torch.sigmoid(logits_s).squeeze(1).mean(0)
+        scores = torch.sigmoid(logits_p)
         weights = weights.split(num_boxes)
         scores = scores.split(num_boxes)
         if len(labels) == 0:
@@ -323,6 +323,7 @@ class InteractionHead(Module):
 
         box_pair_features = torch.cat(box_pair_features)
         logits = self.box_pair_predictor(box_pair_features)
+        pairing_weights = torch.cat(pairing_weights, dim=1)
 
         results = self.postprocess(
             logits, pairing_weights, box_pair_prior,
