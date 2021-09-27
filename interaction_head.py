@@ -55,7 +55,6 @@ class InteractionHead(Module):
         # Network components
         box_roi_pool: Module,
         box_pair_head: Module,
-        box_pair_suppressor: Module,
         box_pair_predictor: Module,
         # Dataset properties
         human_idx: int,
