@@ -650,6 +650,9 @@ class GraphHead(Module):
         self.attention_layer = AttentionLayer(
             hidden_size=representation_size
         )
+        self.feature_head = pocket.models.TransformerEncoderLayer(
+            hidden_size=representation_size * 2
+        )
 
         # Spatial attention head
         self.attention_head = MultiBranchFusion(
@@ -819,14 +822,10 @@ class GraphHead(Module):
 
             # Run the matching layer
             node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
+            # Run the pairing layer
             pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped, x_keep, y_keep)
 
-            if targets is not None:
-                all_labels.append(self.associate_with_ground_truth(
-                    coords[x_keep], coords[y_keep], targets[b_idx])
-                )
-                
-            all_box_pair_features.append(torch.cat([
+            box_pair_features = torch.cat([
                 self.attention_head(
                     torch.cat([
                         node_encodings[x_keep],
@@ -836,7 +835,15 @@ class GraphHead(Module):
                 ), self.attention_head_g(
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
-            ], dim=1))
+            ], dim=1)
+            # Run the feature head
+            box_pair_features, _ = self.feature_head(box_pair_features)
+
+            if targets is not None:
+                all_labels.append(self.associate_with_ground_truth(
+                    coords[x_keep], coords[y_keep], targets[b_idx])
+                )
+            all_box_pair_features.append(box_pair_features)
             all_boxes_h.append(x_keep)
             all_boxes_o.append(y_keep)
             all_object_class.append(labels[y_keep])
