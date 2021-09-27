@@ -150,12 +150,10 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
         )
 
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
-        box_pair_suppressor = nn.Linear(representation_size * 2, 1)
 
         interaction_head = InteractionHead(
             box_roi_pool=box_roi_pool,
             box_pair_head=box_pair_head,
-            box_pair_suppressor=box_pair_suppressor,
             box_pair_predictor=box_pair_predictor,
             num_classes=num_classes,
             human_idx=human_idx,
