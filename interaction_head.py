@@ -238,7 +238,7 @@ class InteractionHead(Module):
         """
         num_boxes = [len(b) for b in boxes_h]
 
-        weights = torch.sigmoid(logits_s).squeeze(1).mean(0)
+        weights = torch.sigmoid(logits_s).mean(0)
         scores = torch.sigmoid(logits_p)
         weights = weights.split(num_boxes)
         scores = scores.split(num_boxes)
@@ -570,7 +570,7 @@ class AttentionLayer(Module):
         attn_features = torch.cat([
             u_r[:, i], u_r[:, j], p_r[:, i, j]
         ], dim=-1)
-        # Attention weights (H, M, 1)
+        # Attention weights (H, M)
         weights = torch.stack([
             l(f) for f, l
             in zip(attn_features, self.attn)
@@ -791,6 +791,7 @@ class GraphHead(Module):
                 all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
                 all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
                 all_labels.append(torch.zeros(0, self.num_cls, device=device))
+                all_pairing_weights.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
