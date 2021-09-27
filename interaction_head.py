@@ -72,7 +72,6 @@ class InteractionHead(Module):
 
         self.box_roi_pool = box_roi_pool
         self.box_pair_head = box_pair_head
-        self.box_pair_suppressor = box_pair_suppressor
         self.box_pair_predictor = box_pair_predictor
 
         self.num_classes = num_classes
@@ -241,7 +240,7 @@ class InteractionHead(Module):
         num_boxes = [len(b) for b in boxes_h]
 
         weights = torch.sigmoid(logits_s).squeeze(1)
-        scores = torch.sigmoid(logits_p)
+        scores = torch.sigmoid(logits_p).mean(0)
         weights = weights.split(num_boxes)
         scores = scores.split(num_boxes)
         if len(labels) == 0:
@@ -318,17 +317,16 @@ class InteractionHead(Module):
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
 
         box_pair_features, boxes_h, boxes_o, object_class,\
-        box_pair_labels, box_pair_prior, attn_maps = self.box_pair_head(
+        box_pair_labels, box_pair_prior, attn_maps, pairing_weights = self.box_pair_head(
             features, image_shapes, box_features,
             box_coords, box_labels, box_scores, targets
         )
 
         box_pair_features = torch.cat(box_pair_features)
-        logits_p = self.box_pair_predictor(box_pair_features)
-        logits_s = self.box_pair_suppressor(box_pair_features)
+        logits = self.box_pair_predictor(box_pair_features)
 
         results = self.postprocess(
-            logits_p, logits_s, box_pair_prior,
+            logits, pairing_weights, box_pair_prior,
             box_coords, boxes_h, boxes_o,
             object_class, box_pair_labels, attn_maps
         )
@@ -558,9 +556,7 @@ class AttentionLayer(Module):
         else:
             raise ValueError("Incorrect tensor shape")
 
-    def forward(self, x: Tensor, y: Tensor):
-        device = x.device
-        n = len(x)
+    def forward(self, x: Tensor, y: Tensor, i: Tensor, j: Tensor):
 
         u = F.relu(self.unary(x))
         p = F.relu(self.pairwise(y))
@@ -570,20 +566,15 @@ class AttentionLayer(Module):
         # Pairwise features (H, N, N, L)
         p_r = self.reshape(p)
 
-        i, j = torch.meshgrid(
-            torch.arange(n, device=device),
-            torch.arange(n, device=device)
-        )
-
-        # Features used to compute attention (H, N, N, 3L)
+        # Features used to compute attention (H, M, 3L)
         attn_features = torch.cat([
-            u_r[:, i], u_r[:, j], p_r
+            u_r[:, i], u_r[:, j], p_r[:, i, j]
         ], dim=-1)
-        # Attention weights (H,) (N, N, 1)
-        weights = [
-            F.softmax(l(f), dim=0) for f, l
+        # Attention weights (H, M, 1)
+        weights = torch.stack([
+            l(f) for f, l
             in zip(attn_features, self.attn)
-        ]
+        ]).squeeze(-1)
 
         return weights
 class GraphHead(Module):
@@ -829,7 +820,7 @@ class GraphHead(Module):
 
             # Run the matching layer
             node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
-            pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped)
+            pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped, x_keep, y_keep)
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
