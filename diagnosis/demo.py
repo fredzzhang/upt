@@ -53,18 +53,31 @@ def visualise_entire_image(dataset, output):
     boxes = output['boxes']
     bh = output['boxes_h']
     bo = output['boxes_o']
+    pairs = [str(p) for p in output['pairs']]
 
-    attn_maps = output['attn_maps']
+    attn_1 = output['attn_maps'][0]
+    attn_2 = output['attn_maps'][1]
 
-    for i, attn_iter in enumerate(attn_maps):
-        fig, axe = plt.subplots(2, 4)
-        fig.suptitle(f"Attention map in iteration {i}")
-        axe = np.concatenate(axe)
-        for ax, attn in zip(axe, attn_iter):
-            im = ax.imshow(attn, vmin=0, vmax=1)
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            fig.colorbar(im, cax=cax)
+    fig, axe = plt.subplots(2, 4)
+    axe = np.concatenate(axe)
+    for ax, attn in zip(axe, attn_1):
+        im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax)
+
+    fig, axe = plt.subplots(2, 4)
+    axe = np.concatenate(axe)
+    ticks = list(range(len(pairs)))
+    for ax, attn in zip(axe, attn_2):
+        im = ax.imshow(attn, vmin=0, vmax=1)
+        divider = make_axes_locatable(ax)
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(pairs, rotation=45)
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(pairs)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax)
 
     im = dataset.dataset.load_image(
         os.path.join(
