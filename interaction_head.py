@@ -254,6 +254,7 @@ class InteractionHead(Module):
 
             result_dict = dict(
                 boxes=b, boxes_h=b_h[x], boxes_o=b_o[x], prediction=y,
+                pairs=[(i.item(), j.item()) for i, j in zip(b_h, b_o)],
                 scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
                 object=o[x], prior=p[:, x, y], weights=w, attn_maps=a
             )
@@ -652,7 +653,8 @@ class GraphHead(Module):
             hidden_size=representation_size
         )
         self.feature_head = pocket.models.TransformerEncoderLayer(
-            hidden_size=representation_size * 2
+            hidden_size=representation_size * 2,
+            return_weights=True
         )
 
         # Spatial attention head
@@ -839,7 +841,7 @@ class GraphHead(Module):
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1)
             # Run the feature head
-            box_pair_features, _ = self.feature_head(box_pair_features)
+            box_pair_features, attn_data_2 = self.feature_head(box_pair_features)
 
             if targets is not None:
                 all_labels.append(self.associate_with_ground_truth(
@@ -853,8 +855,7 @@ class GraphHead(Module):
             all_prior.append(self.compute_prior_scores(
                 x_keep, y_keep, scores, labels)
             )
-
-            all_attn_data.append(attn_data)
+            all_attn_data.append((attn_data, attn_data_2))
             all_pairing_weights.append(pairing_weights)
 
             counter += n
