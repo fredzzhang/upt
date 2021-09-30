@@ -159,7 +159,7 @@ def test(net, test_loader):
 
         # Batch size is fixed as 1 for inference
         assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
-        output = pocket.ops.relocate_to_cpu(output[0])
+        output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
         target = batch[-1][0]
         # Format detections
         boxes = output['boxes']
