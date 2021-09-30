@@ -808,7 +808,7 @@ class GraphHead(Module):
                 torch.arange(n, device=device)
             )
             # Valid human-object pairs
-            x_keep, y_keep = torch.nonzero(torch.logical_and(x != y, x <= n_h)).unbind(1)
+            x_keep, y_keep = torch.nonzero(torch.logical_and(x != y, x < n_h)).unbind(1)
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
                 raise ValueError("There are no valid human-object pairs")
