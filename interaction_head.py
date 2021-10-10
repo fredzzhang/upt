@@ -56,16 +56,23 @@ class InteractionHead(Module):
         box_roi_pool: Module,
         box_pair_head: Module,
         box_pair_predictor: Module,
+        out_channels: int,
+        roi_pool_size: int,
+        node_encoding_size: int, 
+        representation_size: int, 
         # Dataset properties
         human_idx: int,
         num_classes: int,
+        object_class_to_target_class: List[list],
         # Hyperparameters
+        num_iter: int = 2,
         box_nms_thresh: float = 0.5,
         box_score_thresh: float = 0.2,
+        fg_iou_thresh: float = 0.5,
         max_human: int = 15,
         max_object: int = 15,
         # Misc
-        distributed: bool = False
+        distributed: bool = False,
     ) -> None:
         super().__init__()
 
@@ -73,15 +80,69 @@ class InteractionHead(Module):
         self.box_pair_head = box_pair_head
         self.box_pair_predictor = box_pair_predictor
 
-        self.num_classes = num_classes
+        self.out_channels = out_channels
+        self.roi_pool_size = roi_pool_size
+        self.node_encoding_size = node_encoding_size
+        self.representation_size = representation_size
+
         self.human_idx = human_idx
+        self.num_classes = num_classes
+        self.object_class_to_target_class = object_class_to_target_class
+
+        self.num_iter = num_iter
 
         self.box_nms_thresh = box_nms_thresh
         self.box_score_thresh = box_score_thresh
+        self.fg_iou_thresh = fg_iou_thresh
         self.max_human = max_human
         self.max_object = max_object
 
         self.distributed = distributed
+
+        # Box head to map RoI features to low dimensional
+        self.box_head = nn.Sequential(
+            Flatten(start_dim=1),
+            nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
+            nn.ReLU(),
+            nn.Linear(node_encoding_size, node_encoding_size),
+            nn.ReLU()
+        )
+
+        # Map spatial encodings to the same dimension as appearance features
+        self.spatial_head = nn.Sequential(
+            nn.Linear(36, 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+        )
+
+        self.matching_layer = MatchingLayer(
+            hidden_size=representation_size,
+            return_weights=True
+        )
+        self.attention_layer = AttentionLayer(
+            hidden_size=representation_size
+        )
+        self.feature_head = pocket.models.TransformerEncoderLayer(
+            hidden_size=representation_size * 2,
+            return_weights=True
+        )
+
+        # Spatial attention head
+        self.attention_head = MultiBranchFusion(
+            node_encoding_size * 2,
+            1024, representation_size,
+            cardinality=16
+        )
+
+        self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
+        # Attention head for global features
+        self.attention_head_g = MultiBranchFusion(
+            256, 1024,
+            representation_size, cardinality=16
+        )
 
     def preprocess(self,
         detections: List[dict],
@@ -385,7 +446,7 @@ class MultiBranchFusion(Module):
             for fc_1, fc_2, fc_3
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
-        
+
 class MatchingLayer(Module):
     def __init__(self,
         hidden_size: int = 1024,
