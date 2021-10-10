@@ -432,21 +432,106 @@ class InteractionHead(Module):
         box_scores = [detection['scores'] for detection in detections]
 
         box_features = self.box_roi_pool(features, box_coords, image_shapes)
+        global_features = self.avg_pool(features['3']).flatten(start_dim=1)
+        box_features = self.box_head(box_features)
 
-        box_pair_features, boxes_h, boxes_o, object_class,\
-        box_pair_labels, box_pair_prior, attn_maps, pairing_weights = self.box_pair_head(
-            features, image_shapes, box_features,
-            box_coords, box_labels, box_scores, targets
-        )
+        num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
 
-        box_pair_features = torch.cat(box_pair_features)
-        logits = self.box_pair_predictor(box_pair_features)
-        pairing_weights = torch.cat(pairing_weights, dim=1)
+        counter = 0
+        all_boxes_h = []; all_boxes_o = []
+        all_object_class = []; all_labels = []
+        all_prior = []; all_box_pair_features = []
+        all_attn_data = []; all_pairing_weights = []
+
+        for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
+            n = num_boxes[b_idx]
+            device = box_features.device
+
+            n_h = torch.sum(labels == self.human_idx).item()
+            # Skip image when there are no detected human or object instances
+            # and when there is only one detected instance
+            if n_h == 0 or n <= 1:
+                all_box_pair_features.append(torch.zeros(
+                    0, 2 * self.representation_size,
+                    device=device)
+                )
+                all_boxes_h.append(torch.zeros(0, 4, device=device))
+                all_boxes_o.append(torch.zeros(0, 4, device=device))
+                all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
+                all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
+                all_labels.append(torch.zeros(0, self.num_cls, device=device))
+                all_pairing_weights.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
+                continue
+            if not torch.all(labels[:n_h]==self.human_idx):
+                raise ValueError("Human detections are not permuted to the top")
+
+            node_encodings = box_features[counter: counter+n]
+            # Get the pairwise indices
+            x, y = torch.meshgrid(
+                torch.arange(n, device=device),
+                torch.arange(n, device=device)
+            )
+            # Valid human-object pairs
+            x_keep, y_keep = torch.nonzero(torch.logical_and(x != y, x < n_h)).unbind(1)
+            if len(x_keep) == 0:
+                # Should never happen, just to be safe
+                raise ValueError("There are no valid human-object pairs")
+            # Human nodes have been duplicated and will be treated independently
+            # of the humans included amongst object nodes
+            x = x.flatten(); y = y.flatten()
+
+            # Compute spatial features
+            box_pair_spatial = compute_spatial_encodings(
+                [coords[x]], [coords[y]], [image_shapes[b_idx]]
+            )
+            box_pair_spatial = self.spatial_head(box_pair_spatial)
+            # Reshape the spatial features
+            box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
+
+            # Run the matching layer
+            node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
+            # Run the pairing layer
+            pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped, x_keep, y_keep)
+
+            box_pair_features = torch.cat([
+                self.attention_head(
+                    torch.cat([
+                        node_encodings[x_keep],
+                        node_encodings[y_keep]
+                        ], 1),
+                    box_pair_spatial_reshaped[x_keep, y_keep]
+                ), self.attention_head_g(
+                    global_features[b_idx, None],
+                    box_pair_spatial_reshaped[x_keep, y_keep])
+            ], dim=1)
+            # Run the feature head
+            box_pair_features, attn_data_2 = self.feature_head(box_pair_features)
+
+            if targets is not None:
+                all_labels.append(self.associate_with_ground_truth(
+                    coords[x_keep], coords[y_keep], targets[b_idx])
+                )
+            all_box_pair_features.append(box_pair_features)
+            all_boxes_h.append(x_keep)
+            all_boxes_o.append(y_keep)
+            all_object_class.append(labels[y_keep])
+            # The prior score is the product of the object detection scores
+            all_prior.append(self.compute_prior_scores(
+                x_keep, y_keep, scores, labels)
+            )
+            all_attn_data.append((attn_data, attn_data_2))
+            all_pairing_weights.append(pairing_weights)
+
+            counter += n
+
+        all_box_pair_features = torch.cat(all_box_pair_features)
+        logits = self.box_pair_predictor(all_box_pair_features)
+        all_pairing_weights = torch.cat(all_pairing_weights, dim=1)
 
         results = self.postprocess(
-            logits, pairing_weights, box_pair_prior,
-            box_coords, boxes_h, boxes_o,
-            object_class, box_pair_labels, attn_maps
+            logits, all_pairing_weights, all_prior,
+            box_coords, all_boxes_h, all_boxes_o,
+            all_object_class, all_labels, all_attn_data
         )
 
         if self.training:
