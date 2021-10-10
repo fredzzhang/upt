@@ -205,6 +205,62 @@ class InteractionHead(Module):
 
         return results
 
+    def associate_with_ground_truth(self,
+        boxes_h: Tensor,
+        boxes_o: Tensor,
+        targets: List[dict]
+    ) -> Tensor:
+        n = boxes_h.shape[0]
+        labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
+
+        x, y = torch.nonzero(torch.min(
+            box_ops.box_iou(boxes_h, targets["boxes_h"]),
+            box_ops.box_iou(boxes_o, targets["boxes_o"])
+        ) >= self.fg_iou_thresh).unbind(1)
+
+        labels[x, targets["labels"][y]] = 1
+
+        return labels
+
+    def compute_prior_scores(self,
+        x: Tensor, y: Tensor,
+        scores: Tensor,
+        object_class: Tensor
+    ) -> Tensor:
+        """
+        Parameters:
+        -----------
+            x: Tensor[M]
+                Indices of human boxes (paired)
+            y: Tensor[M]
+                Indices of object boxes (paired)
+            scores: Tensor[N]
+                Object detection scores (before pairing)
+            object_class: Tensor[N]
+                Object class indices (before pairing)
+        """
+        prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_o = torch.zeros_like(prior_h)
+
+        # Raise the power of object detection scores during inference
+        p = 1.0 if self.training else 2.8
+        s_h = scores[x].pow(p)
+        s_o = scores[y].pow(p)
+
+        # Map object class index to target class index
+        # Object class index to target class index is a one-to-many mapping
+        target_cls_idx = [self.object_class_to_target_class[obj.item()]
+            for obj in object_class[y]]
+        # Duplicate box pair indices for each target class
+        pair_idx = [i for i, tar in enumerate(target_cls_idx) for _ in tar]
+        # Flatten mapped target indices
+        flat_target_idx = [t for tar in target_cls_idx for t in tar]
+
+        prior_h[pair_idx, flat_target_idx] = s_h[pair_idx]
+        prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
+
+        return torch.stack([prior_h, prior_o])
+
     def compute_interaction_classification_loss(self, results: List[dict]) -> Tensor:
         scores = []; labels = []
         for result in results:
