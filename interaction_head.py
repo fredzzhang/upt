@@ -239,7 +239,6 @@ class InteractionHead(Module):
     def __init__(self,
         # Network components
         box_roi_pool: Module,
-        box_pair_head: Module,
         box_pair_predictor: Module,
         out_channels: int,
         roi_pool_size: int,
@@ -262,7 +261,6 @@ class InteractionHead(Module):
         super().__init__()
 
         self.box_roi_pool = box_roi_pool
-        self.box_pair_head = box_pair_head
         self.box_pair_predictor = box_pair_predictor
 
         self.out_channels = out_channels
