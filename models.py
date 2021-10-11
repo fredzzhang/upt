@@ -137,18 +137,6 @@ class SpatiallyConditionedGraph(GenericHOINetwork):
             sampling_ratio=sampling_ratio
         )
 
-        box_pair_head = GraphHead(
-            out_channels=backbone.out_channels,
-            roi_pool_size=output_size,
-            node_encoding_size=node_encoding_size,
-            representation_size=representation_size,
-            num_cls=num_classes,
-            human_idx=human_idx,
-            object_class_to_target_class=object_to_action,
-            fg_iou_thresh=fg_iou_thresh,
-            num_iter=num_iterations
-        )
-
         box_pair_predictor = nn.Linear(representation_size * 2, num_classes)
 
         interaction_head = InteractionHead(
