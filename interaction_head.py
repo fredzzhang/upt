@@ -15,14 +15,12 @@ import torchvision.ops.boxes as box_ops
 from torch.nn import Module
 from torch import nn, Tensor
 from pocket.ops import Flatten
-from typing import Match, Optional, List, Tuple
+from typing import Optional, List, Tuple
 from collections import OrderedDict
 
 import pocket
 
 from ops import compute_spatial_encodings, binary_focal_loss
-
-
 
 class MultiBranchFusion(Module):
     """
@@ -69,7 +67,7 @@ class MultiBranchFusion(Module):
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
 
-class MatchingLayer(Module):
+class UnaryLayer(Module):
     def __init__(self,
         hidden_size: int = 1024,
         num_heads: int = 8,
@@ -153,7 +151,7 @@ class MatchingLayer(Module):
             attn = None
 
         return x, attn
-class AttentionLayer(Module):
+class PairwiseLayer(Module):
     def __init__(self,
         hidden_size: int = 1024,
         num_heads: int = 8
@@ -301,11 +299,11 @@ class InteractionHead(Module):
             nn.ReLU(),
         )
 
-        self.matching_layer = MatchingLayer(
+        self.matching_layer = UnaryLayer(
             hidden_size=representation_size,
             return_weights=True
         )
-        self.attention_layer = AttentionLayer(
+        self.attention_layer = PairwiseLayer(
             hidden_size=representation_size
         )
         self.feature_head = pocket.models.TransformerEncoderLayer(
