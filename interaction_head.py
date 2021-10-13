@@ -482,8 +482,8 @@ class InteractionHead(Module):
         return loss / n_p
 
     def postprocess(self,
-        logits_p: Tensor,
-        logits_s: Tensor,
+        logits: Tensor,
+        unary: Tensor,
         prior: List[Tensor],
         box_coords: List[Tensor],
         boxes_h: List[Tensor],
@@ -536,8 +536,8 @@ class InteractionHead(Module):
         """
         num_boxes = [len(b) for b in boxes_h]
 
-        weights = torch.sigmoid(logits_s).mean(0)
-        scores = torch.sigmoid(logits_p)
+        weights = torch.sigmoid(unary).mean(0)
+        scores = torch.sigmoid(logits)
         weights = weights.split(num_boxes)
         scores = scores.split(num_boxes)
         if len(labels) == 0:
