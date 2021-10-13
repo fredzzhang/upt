@@ -7,9 +7,6 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
-import torch
-import torchvision.ops.boxes as box_ops
-
 from torch import nn, Tensor
 from torchvision.ops._utils import _cat
 from typing import Optional, List, Tuple
