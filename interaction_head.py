@@ -619,10 +619,10 @@ class InteractionHead(Module):
         num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
 
         counter = 0
-        all_boxes_h = []; all_boxes_o = []
-        all_object_class = []; all_labels = []
-        all_prior = []; all_box_pair_features = []
-        all_attn_data = []; all_pairing_weights = []
+        boxes_h_collated = []; boxes_o_collated = []
+        object_class_collated = []; labels_collated = []
+        prior_collated = []; pairwise_features_collated = []
+        attn_maps_collated = []; unary_logits_collated = []
 
         for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
             n = num_boxes[b_idx]
@@ -632,16 +632,16 @@ class InteractionHead(Module):
             # Skip image when there are no detected human or object instances
             # and when there is only one detected instance
             if n_h == 0 or n <= 1:
-                all_box_pair_features.append(torch.zeros(
+                pairwise_features_collated.append(torch.zeros(
                     0, 2 * self.representation_size,
                     device=device)
                 )
-                all_boxes_h.append(torch.zeros(0, 4, device=device))
-                all_boxes_o.append(torch.zeros(0, 4, device=device))
-                all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
-                all_prior.append(torch.zeros(2, 0, self.num_classes, device=device))
-                all_labels.append(torch.zeros(0, self.num_classes, device=device))
-                all_pairing_weights.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
+                boxes_h_collated.append(torch.zeros(0, 4, device=device))
+                boxes_o_collated.append(torch.zeros(0, 4, device=device))
+                object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
+                prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
+                labels_collated.append(torch.zeros(0, self.num_classes, device=device))
+                unary_logits_collated.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
@@ -689,30 +689,30 @@ class InteractionHead(Module):
             box_pair_features, attn_data_2 = self.feature_head(box_pair_features)
 
             if targets is not None:
-                all_labels.append(self.associate_with_ground_truth(
+                labels_collated.append(self.associate_with_ground_truth(
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
-            all_box_pair_features.append(box_pair_features)
-            all_boxes_h.append(x_keep)
-            all_boxes_o.append(y_keep)
-            all_object_class.append(labels[y_keep])
+            pairwise_features_collated.append(box_pair_features)
+            boxes_h_collated.append(x_keep)
+            boxes_o_collated.append(y_keep)
+            object_class_collated.append(labels[y_keep])
             # The prior score is the product of the object detection scores
-            all_prior.append(self.compute_prior_scores(
+            prior_collated.append(self.compute_prior_scores(
                 x_keep, y_keep, scores, labels)
             )
-            all_attn_data.append((attn_data, attn_data_2))
-            all_pairing_weights.append(pairing_weights)
+            attn_maps_collated.append((attn_data, attn_data_2))
+            unary_logits_collated.append(pairing_weights)
 
             counter += n
 
-        all_box_pair_features = torch.cat(all_box_pair_features)
-        logits = self.box_pair_predictor(all_box_pair_features)
-        all_pairing_weights = torch.cat(all_pairing_weights, dim=1)
+        pairwise_features_collated = torch.cat(pairwise_features_collated)
+        logits = self.box_pair_predictor(pairwise_features_collated)
+        unary_logits_collated = torch.cat(unary_logits_collated, dim=1)
 
         results = self.postprocess(
-            logits, all_pairing_weights, all_prior,
-            box_coords, all_boxes_h, all_boxes_o,
-            all_object_class, all_labels, all_attn_data
+            logits, unary_logits_collated, prior_collated,
+            box_coords, boxes_h_collated, boxes_o_collated,
+            object_class_collated, labels_collated, attn_maps_collated
         )
 
         if self.training:
