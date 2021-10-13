@@ -394,7 +394,7 @@ class InteractionHead(Module):
         targets: List[dict]
     ) -> Tensor:
         n = boxes_h.shape[0]
-        labels = torch.zeros(n, self.num_cls, device=boxes_h.device)
+        labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
 
         x, y = torch.nonzero(torch.min(
             box_ops.box_iou(boxes_h, targets["boxes_h"]),
@@ -422,7 +422,7 @@ class InteractionHead(Module):
             object_class: Tensor[N]
                 Object class indices (before pairing)
         """
-        prior_h = torch.zeros(len(x), self.num_cls, device=scores.device)
+        prior_h = torch.zeros(len(x), self.num_classes, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
         # Raise the power of object detection scores during inference
@@ -641,8 +641,8 @@ class InteractionHead(Module):
                 all_boxes_h.append(torch.zeros(0, 4, device=device))
                 all_boxes_o.append(torch.zeros(0, 4, device=device))
                 all_object_class.append(torch.zeros(0, device=device, dtype=torch.int64))
-                all_prior.append(torch.zeros(2, 0, self.num_cls, device=device))
-                all_labels.append(torch.zeros(0, self.num_cls, device=device))
+                all_prior.append(torch.zeros(2, 0, self.num_classes, device=device))
+                all_labels.append(torch.zeros(0, self.num_classes, device=device))
                 all_pairing_weights.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
