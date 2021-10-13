@@ -19,7 +19,7 @@ from torchvision.models.detection import transform
 import pocket.models as models
 
 from transforms import HOINetworkTransform
-from interaction_head import InteractionHead, GraphHead
+from interaction_head import InteractionHead
 
 class GenericHOINetwork(nn.Module):
     """A generic architecture for HOI classification
