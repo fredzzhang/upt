@@ -6,3 +6,6 @@
 	path = vcoco
 	url = https://github.com/fredzzhang/vcoco
 	branch = main
+[submodule "detr"]
+	path = detr
+	url = https://github.com/fredzzhang/detr.git
