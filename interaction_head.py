@@ -7,6 +7,7 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
+from os import PRIO_PROCESS
 import torch
 import torch.nn.functional as F
 import torch.distributed as dist
@@ -151,7 +152,7 @@ class UnaryLayer(Module):
             attn = None
 
         return x, attn
-class PairwiseLayer(Module):
+class WeightingLayer(Module):
     def __init__(self,
         hidden_size: int = 1024,
         num_heads: int = 8
@@ -299,14 +300,14 @@ class InteractionHead(Module):
             nn.ReLU(),
         )
 
-        self.matching_layer = UnaryLayer(
+        self.unary_layer = UnaryLayer(
             hidden_size=representation_size,
             return_weights=True
         )
-        self.attention_layer = PairwiseLayer(
+        self.weighting_layer = WeightingLayer(
             hidden_size=representation_size
         )
-        self.feature_head = pocket.models.TransformerEncoderLayer(
+        self.pairwise_layer = pocket.models.TransformerEncoderLayer(
             hidden_size=representation_size * 2,
             return_weights=True
         )
@@ -324,67 +325,6 @@ class InteractionHead(Module):
             256, 1024,
             representation_size, cardinality=16
         )
-
-    def preprocess(self,
-        detections: List[dict],
-        targets: List[dict],
-        append_gt: Optional[bool] = None
-    ) -> None:
-
-        results = []
-        for b_idx, detection in enumerate(detections):
-            boxes = detection['boxes']
-            labels = detection['labels']
-            scores = detection['scores']
-
-            # Append ground truth during training
-            if append_gt is None:
-                append_gt = self.training
-            if append_gt:
-                target = targets[b_idx]
-                n = target["boxes_h"].shape[0]
-                boxes = torch.cat([target["boxes_h"], target["boxes_o"], boxes])
-                scores = torch.cat([torch.ones(2 * n, device=scores.device), scores])
-                labels = torch.cat([
-                    self.human_idx * torch.ones(n, device=labels.device).long(),
-                    target["object"],
-                    labels
-                ])
-
-            # Remove low scoring examples
-            active_idx = torch.nonzero(
-                scores >= self.box_score_thresh
-            ).squeeze(1)
-            # Class-wise non-maximum suppression
-            keep_idx = box_ops.batched_nms(
-                boxes[active_idx],
-                scores[active_idx],
-                labels[active_idx],
-                self.box_nms_thresh
-            )
-            active_idx = active_idx[keep_idx]
-            # Sort detections by scores
-            sorted_idx = torch.argsort(scores[active_idx], descending=True)
-            active_idx = active_idx[sorted_idx]
-            # Keep a fixed number of detections
-            h_idx = torch.nonzero(labels[active_idx] == self.human_idx).squeeze(1)
-            o_idx = torch.nonzero(labels[active_idx] != self.human_idx).squeeze(1)
-            if len(h_idx) > self.max_human:
-                h_idx = h_idx[:self.max_human]
-            if len(o_idx) > self.max_object:
-                o_idx = o_idx[:self.max_object]
-            # Permute humans to the top
-            keep_idx = torch.cat([h_idx, o_idx])
-            active_idx = active_idx[keep_idx]
-
-            results.append(dict(
-                boxes=boxes[active_idx].view(-1, 4),
-                labels=labels[active_idx].view(-1),
-                scores=scores[active_idx].view(-1)
-            
-            ))
-
-        return results
 
     def associate_with_ground_truth(self,
         boxes_h: Tensor,
@@ -567,9 +507,8 @@ class InteractionHead(Module):
 
     def forward(self,
         features: OrderedDict,
-        detections: List[dict],
-        image_shapes: List[Tuple[int, int]],
-        targets: Optional[List[dict]] = None
+        image_shapes: Tensor,
+        region_props: List[dict]
     ) -> List[dict]:
         """
         Parameters:
@@ -604,33 +543,24 @@ class InteractionHead(Module):
             `interactiveness_loss`: Tensor
                 Loss incurred on learned unary weights
         """
-        if self.training:
-            assert targets is not None, "Targets should be passed during training"
-        detections = self.preprocess(detections, targets)
 
-        box_coords = [detection['boxes'] for detection in detections]
-        box_labels = [detection['labels'] for detection in detections]
-        box_scores = [detection['scores'] for detection in detections]
+        device = features.device
+        global_features = self.avg_pool(features).flatten(start_dim=1)
 
-        box_features = self.box_roi_pool(features, box_coords, image_shapes)
-        global_features = self.avg_pool(features['3']).flatten(start_dim=1)
-        box_features = self.box_head(box_features)
-
-        num_boxes = [len(boxes_per_image) for boxes_per_image in box_coords]
-
-        counter = 0
         boxes_h_collated = []; boxes_o_collated = []
         object_class_collated = []; labels_collated = []
         prior_collated = []; pairwise_features_collated = []
         attn_maps_collated = []; unary_logits_collated = []
 
-        for b_idx, (coords, labels, scores) in enumerate(zip(box_coords, box_labels, box_scores)):
-            n = num_boxes[b_idx]
-            device = box_features.device
+        for b_idx, props in enumerate(region_props):
+            boxes = props['boxes']
+            scores = props['scores']
+            labels = props['labels']
+            unary_f = props['hidden_states']
 
             n_h = torch.sum(labels == self.human_idx).item()
-            # Skip image when there are no detected human or object instances
-            # and when there is only one detected instance
+            n = len(boxes)
+            # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_features_collated.append(torch.zeros(
                     0, 2 * self.representation_size,
@@ -641,12 +571,11 @@ class InteractionHead(Module):
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 labels_collated.append(torch.zeros(0, self.num_classes, device=device))
-                unary_logits_collated.append(torch.zeros(self.attention_layer.num_heads, 0, device=device))
+                unary_logits_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
 
-            node_encodings = box_features[counter: counter+n]
             # Get the pairwise indices
             x, y = torch.meshgrid(
                 torch.arange(n, device=device),
@@ -663,36 +592,33 @@ class InteractionHead(Module):
 
             # Compute spatial features
             box_pair_spatial = compute_spatial_encodings(
-                [coords[x]], [coords[y]], [image_shapes[b_idx]]
+                [boxes[x]], [boxes[y]], [image_shapes[b_idx]]
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
 
-            # Run the matching layer
-            node_encodings, attn_data = self.matching_layer(node_encodings, box_pair_spatial_reshaped)
-            # Run the pairing layer
-            pairing_weights = self.attention_layer(node_encodings, box_pair_spatial_reshaped, x_keep, y_keep)
+            # Run the unary_layer
+            unary_f, unary_attn = self.unary_layer(unary_f, box_pair_spatial_reshaped)
+            # Run the weighting layer
+            pairing_weights = self.weighting_layer(unary_f, box_pair_spatial_reshaped, x_keep, y_keep)
 
-            box_pair_features = torch.cat([
+            pairwise_f = torch.cat([
                 self.attention_head(
-                    torch.cat([
-                        node_encodings[x_keep],
-                        node_encodings[y_keep]
-                        ], 1),
+                    torch.cat([unary_f[x_keep], unary_f[y_keep]], 1),
                     box_pair_spatial_reshaped[x_keep, y_keep]
                 ), self.attention_head_g(
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1)
-            # Run the feature head
-            box_pair_features, attn_data_2 = self.feature_head(box_pair_features)
+            # Run the pairwise layer
+            pairwise_f, pairwise_attn = self.pairwise_layer(pairwise_f)
 
             if targets is not None:
                 labels_collated.append(self.associate_with_ground_truth(
                     coords[x_keep], coords[y_keep], targets[b_idx])
                 )
-            pairwise_features_collated.append(box_pair_features)
+            pairwise_features_collated.append(pairwise_f)
             boxes_h_collated.append(x_keep)
             boxes_o_collated.append(y_keep)
             object_class_collated.append(labels[y_keep])
@@ -700,7 +626,7 @@ class InteractionHead(Module):
             prior_collated.append(self.compute_prior_scores(
                 x_keep, y_keep, scores, labels)
             )
-            attn_maps_collated.append((attn_data, attn_data_2))
+            attn_maps_collated.append((unary_attn, pairwise_attn))
             unary_logits_collated.append(pairing_weights)
 
             counter += n
