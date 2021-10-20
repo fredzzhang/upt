@@ -32,20 +32,20 @@ class MultiBranchFusion(Module):
         Size of the appearance features
     spatial_size: int
         Size of the spatial features
-    representation_size: int
+    hidden_state_size: int
         Size of the intermediate representations
     cardinality: int
         The number of homogeneous branches
     """
     def __init__(self,
         appearance_size: int, spatial_size: int,
-        representation_size: int, cardinality: int
+        hidden_state_size: int, cardinality: int
     ) -> None:
         super().__init__()
         self.cardinality = cardinality
 
-        sub_repr_size = int(representation_size / cardinality)
-        assert sub_repr_size * cardinality == representation_size, \
+        sub_repr_size = int(hidden_state_size / cardinality)
+        assert sub_repr_size * cardinality == hidden_state_size, \
             "The given representation size should be divisible by cardinality"
 
         self.fc_1 = nn.ModuleList([
@@ -57,7 +57,7 @@ class MultiBranchFusion(Module):
             for _ in range(cardinality)
         ])
         self.fc_3 = nn.ModuleList([
-            nn.Linear(sub_repr_size, representation_size)
+            nn.Linear(sub_repr_size, hidden_state_size)
             for _ in range(cardinality)
         ])
     def forward(self, appearance: Tensor, spatial: Tensor) -> Tensor:
@@ -236,58 +236,16 @@ class InteractionHead(Module):
     """
     def __init__(self,
         # Network components
-        box_roi_pool: Module,
         box_pair_predictor: Module,
-        out_channels: int,
-        roi_pool_size: int,
-        node_encoding_size: int, 
-        representation_size: int, 
-        # Dataset properties
-        human_idx: int,
-        num_classes: int,
-        object_class_to_target_class: List[list],
-        # Hyperparameters
-        num_iter: int = 2,
-        box_nms_thresh: float = 0.5,
-        box_score_thresh: float = 0.2,
-        fg_iou_thresh: float = 0.5,
-        max_human: int = 15,
-        max_object: int = 15,
-        # Misc
-        distributed: bool = False,
+        hidden_state_size: int,
+        object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
 
-        self.box_roi_pool = box_roi_pool
         self.box_pair_predictor = box_pair_predictor
 
-        self.out_channels = out_channels
-        self.roi_pool_size = roi_pool_size
-        self.node_encoding_size = node_encoding_size
-        self.representation_size = representation_size
-
-        self.human_idx = human_idx
-        self.num_classes = num_classes
+        self.hidden_state_size = hidden_state_size
         self.object_class_to_target_class = object_class_to_target_class
-
-        self.num_iter = num_iter
-
-        self.box_nms_thresh = box_nms_thresh
-        self.box_score_thresh = box_score_thresh
-        self.fg_iou_thresh = fg_iou_thresh
-        self.max_human = max_human
-        self.max_object = max_object
-
-        self.distributed = distributed
-
-        # Box head to map RoI features to low dimensional
-        self.box_head = nn.Sequential(
-            Flatten(start_dim=1),
-            nn.Linear(out_channels * roi_pool_size ** 2, node_encoding_size),
-            nn.ReLU(),
-            nn.Linear(node_encoding_size, node_encoding_size),
-            nn.ReLU()
-        )
 
         # Map spatial encodings to the same dimension as appearance features
         self.spatial_head = nn.Sequential(
@@ -295,52 +253,35 @@ class InteractionHead(Module):
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, 1024),
+            nn.Linear(256, hidden_state_size),
             nn.ReLU(),
         )
 
         self.unary_layer = UnaryLayer(
-            hidden_size=representation_size,
+            hidden_size=hidden_state_size,
             return_weights=True
         )
         # self.weighting_layer = WeightingLayer(
-        #     hidden_size=representation_size
+        #     hidden_size=hidden_state_size
         # )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
-            hidden_size=representation_size * 2,
+            hidden_size=hidden_state_size * 2,
             return_weights=True
         )
 
         # Spatial attention head
         self.attention_head = MultiBranchFusion(
-            node_encoding_size * 2,
-            1024, representation_size,
+            hidden_state_size * 2,
+            hidden_state_size, hidden_state_size,
             cardinality=16
         )
 
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
         # Attention head for global features
         self.attention_head_g = MultiBranchFusion(
-            256, 1024,
-            representation_size, cardinality=16
+            256, hidden_state_size,
+            hidden_state_size, cardinality=16
         )
-
-    def associate_with_ground_truth(self,
-        boxes_h: Tensor,
-        boxes_o: Tensor,
-        targets: List[dict]
-    ) -> Tensor:
-        n = boxes_h.shape[0]
-        labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
-
-        x, y = torch.nonzero(torch.min(
-            box_ops.box_iou(boxes_h, targets["boxes_h"]),
-            box_ops.box_iou(boxes_o, targets["boxes_o"])
-        ) >= self.fg_iou_thresh).unbind(1)
-
-        labels[x, targets["labels"][y]] = 1
-
-        return labels
 
     def compute_prior_scores(self,
         x: Tensor, y: Tensor,
@@ -380,129 +321,6 @@ class InteractionHead(Module):
         prior_o[pair_idx, flat_target_idx] = s_o[pair_idx]
 
         return torch.stack([prior_h, prior_o])
-
-    def compute_interaction_classification_loss(self, results: List[dict]) -> Tensor:
-        scores = []; labels = []
-        for result in results:
-            scores.append(result['scores'])
-            labels.append(result['labels'])
-
-        labels = torch.cat(labels)
-        n_p = len(torch.nonzero(labels))
-        if self.distributed:
-            world_size = dist.get_world_size()
-            n_p = torch.as_tensor([n_p], device='cuda')
-            dist.barrier()
-            dist.all_reduce(n_p)
-            n_p = (n_p / world_size).item()
-        loss = binary_focal_loss(
-            torch.cat(scores), labels, reduction='sum', gamma=0.2
-        )
-        return loss / n_p
-
-    def compute_interactiveness_loss(self, results: List[dict]) -> Tensor:
-        weights = []; labels = []
-        for result in results:
-            weights.append(result['weights'])
-            labels.append(result['unary_labels'])
-
-        weights = torch.cat(weights)
-        labels = torch.cat(labels)
-        n_p = len(torch.nonzero(labels))
-        if self.distributed:
-            world_size = dist.get_world_size()
-            n_p = torch.as_tensor([n_p], device='cuda')
-            dist.barrier()
-            dist.all_reduce(n_p)
-            n_p = (n_p / world_size).item()
-        loss = binary_focal_loss(
-            weights, labels, reduction='sum', gamma=2.0
-        )
-        return loss / n_p
-
-    def postprocess(self,
-        logits: Tensor,
-        unary: Tensor,
-        prior: List[Tensor],
-        box_coords: List[Tensor],
-        boxes_h: List[Tensor],
-        boxes_o: List[Tensor],
-        object_class: List[Tensor],
-        labels: List[Tensor],
-        attn_maps: List[list]
-    ) -> List[dict]:
-        """
-        Parameters:
-        -----------
-        logits_p: Tensor
-            (N, K) Classification logits on each action for all box pairs
-        logits_s: Tensor
-            (N, 1) Logits for unary weights
-        prior: List[Tensor]
-            Prior scores organised by images. Each tensor has shape (2, M, K).
-            M could be different for different images
-        boxes_h: List[Tensor]
-            Human bounding box coordinates organised by images (M, 4)
-        boxes_o: List[Tensor]
-            Object bounding box coordinates organised by images (M, 4)
-        object_classes: List[Tensor]
-            Object indices for each pair organised by images (M,)
-        labels: List[Tensor]
-            Binary labels on each action organised by images (M, K)
-
-        Returns:
-        --------
-        results: List[dict]
-            Results organised by images, with keys as below
-            `boxes_h`: Tensor[M, 4]
-            `boxes_o`: Tensor[M, 4]
-            `index`: Tensor[L]
-                Expanded indices of box pairs for each predicted action
-            `prediction`: Tensor[L]
-                Expanded indices of predicted actions
-            `scores`: Tensor[L]
-                Scores for each predicted action
-            `object`: Tensor[M]
-                Object indices for each pair
-            `prior`: Tensor[2, L]
-                Prior scores for expanded pairs
-            `weights`: Tensor[M]
-                Unary weights for each box pair
-            `labels`: Tensor[L], optional
-                Binary labels on each action
-            `unary_labels`: Tensor[M], optional
-                Labels for the unary weights
-        """
-        num_boxes = [len(b) for b in boxes_h]
-
-        weights = torch.sigmoid(unary).mean(0)
-        scores = torch.sigmoid(logits)
-        weights = weights.split(num_boxes)
-        scores = scores.split(num_boxes)
-        if len(labels) == 0:
-            labels = [None for _ in range(len(num_boxes))]
-
-        results = []
-        for w, s, p, b, b_h, b_o, o, l, a in zip(
-            weights, scores, prior, box_coords, boxes_h, boxes_o, object_class, labels, attn_maps
-        ):
-            # Keep valid classes
-            x, y = torch.nonzero(p[0]).unbind(1)
-
-            result_dict = dict(
-                boxes=b, boxes_h=b_h[x], boxes_o=b_o[x], prediction=y,
-                pairs=[(i.item(), j.item()) for i, j in zip(b_h, b_o)],
-                scores=s[x, y] * p[:, x, y].prod(dim=0) * w[x].detach(),
-                object=o[x], prior=p[:, x, y], weights=w, attn_maps=a
-            )
-            # If binary labels are provided
-            if l is not None:
-                result_dict['labels'] = l[x, y]
-                result_dict['unary_labels'] = l.sum(dim=1).clamp(max=1)
-
-            results.append(result_dict)
-
-        return results
 
     def forward(self,
         features: OrderedDict,
@@ -562,7 +380,7 @@ class InteractionHead(Module):
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_features_collated.append(torch.zeros(
-                    0, 2 * self.representation_size,
+                    0, 2 * self.hidden_state_size,
                     device=device)
                 )
                 boxes_h_collated.append(torch.zeros(0, 4, device=device))
