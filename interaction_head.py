@@ -7,7 +7,6 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
-from os import PRIO_PROCESS
 import torch
 import torch.nn.functional as F
 import torch.distributed as dist
@@ -548,9 +547,9 @@ class InteractionHead(Module):
         global_features = self.avg_pool(features).flatten(start_dim=1)
 
         boxes_h_collated = []; boxes_o_collated = []
-        object_class_collated = []; labels_collated = []
-        prior_collated = []; pairwise_features_collated = []
-        attn_maps_collated = []; unary_logits_collated = []
+        prior_collated = []; object_class_collated = []
+        pairwise_features_collated = []
+        attn_maps_collated = []; pairing_weights_collated = []
 
         for b_idx, props in enumerate(region_props):
             boxes = props['boxes']
@@ -570,8 +569,7 @@ class InteractionHead(Module):
                 boxes_o_collated.append(torch.zeros(0, 4, device=device))
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
-                labels_collated.append(torch.zeros(0, self.num_classes, device=device))
-                unary_logits_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
+                pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
@@ -614,10 +612,6 @@ class InteractionHead(Module):
             # Run the pairwise layer
             pairwise_f, pairwise_attn = self.pairwise_layer(pairwise_f)
 
-            if targets is not None:
-                labels_collated.append(self.associate_with_ground_truth(
-                    coords[x_keep], coords[y_keep], targets[b_idx])
-                )
             pairwise_features_collated.append(pairwise_f)
             boxes_h_collated.append(x_keep)
             boxes_o_collated.append(y_keep)
@@ -627,25 +621,11 @@ class InteractionHead(Module):
                 x_keep, y_keep, scores, labels)
             )
             attn_maps_collated.append((unary_attn, pairwise_attn))
-            unary_logits_collated.append(pairing_weights)
-
-            counter += n
+            pairing_weights_collated.append(pairing_weights)
 
         pairwise_features_collated = torch.cat(pairwise_features_collated)
         logits = self.box_pair_predictor(pairwise_features_collated)
-        unary_logits_collated = torch.cat(unary_logits_collated, dim=1)
+        pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
 
-        results = self.postprocess(
-            logits, unary_logits_collated, prior_collated,
-            box_coords, boxes_h_collated, boxes_o_collated,
-            object_class_collated, labels_collated, attn_maps_collated
-        )
-
-        if self.training:
-            loss_dict = dict(
-                hoi_loss=self.compute_interaction_classification_loss(results),
-                interactiveness_loss=self.compute_interactiveness_loss(results)
-            )
-            results.append(loss_dict)
-
-        return results
+        return logits, prior_collated, pairing_weights_collated, \
+            boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
