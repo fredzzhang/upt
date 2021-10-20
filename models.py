@@ -117,7 +117,8 @@ class GenericHOIDetector(nn.Module):
             self.associate_with_ground_truth(bx[h], bx[o], target)
             for bx, h, o, target in zip(boxes, bh, bo, targets)
         ])
-        x, y = torch.nonzero(prior[0]).unbind(1)
+        prior = torch.cat(prior, dim=1).prod(0)
+        x, y = torch.nonzero(prior).unbind(1)
         logits = logits[x, y]; prior = prior[x, y]; labels = labels[x, y]
 
         n_p = len(torch.nonzero(labels))
@@ -177,8 +178,24 @@ class GenericHOIDetector(nn.Module):
 
         return results
 
-    def postprocessing(self):
-        pass
+    def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps):
+        n = [len(b) for b in boxes]
+        logits.split(n)
+
+        detections = []
+        for bx, h, o, lg, pr, obj, attn in zip(
+            boxes, bh, bo, logits, prior, objects, attn_maps
+        ):
+            pr = pr.prod(0)
+            x, y = torch.nonzero(pr)
+            scores = torch.sigmoid(lg[x, y])
+            detections.append(dict(
+                boxes=bx, pairing=torch.stack([h[x], o[x]]),
+                scores=scores * prior[x, y], objects=obj[y],
+                attn_maps=attn
+            ))
+
+        return detections
 
     def forward(self,
         images: List[Tensor],
