@@ -8,15 +8,18 @@ Australian Centre for Robotic Vision
 """
 
 import torch
+import torch.distributed as dist
 
 import sys
+from torch.nn.functional import binary_cross_entropy
+from torchvision.models import detection
 sys.path.append('detr')
 from util.misc import nested_tensor_from_tensor_list
 
 from torch import nn, Tensor
 from torchvision.ops._utils import _cat
 from typing import Optional, List, Tuple
-from torchvision.ops.boxes import batched_nms
+from torchvision.ops.boxes import batched_nms, box_iou
 from torchvision.models.detection import transform
 
 import pocket.models as models
@@ -35,7 +38,11 @@ class GenericHOIDetector(nn.Module):
     def __init__(self,
         detector: nn.Module, criterion: nn.Module,
         postprocessors: nn.Module, interaction_head: nn.Module,
-        box_score_thresh: float, human_idx: int,
+        box_score_thresh: float, fg_iou_thresh: float,
+        # Dataset parameters
+        human_idx: int, num_classes: int,
+        # Training parameters
+        alpha: float = 0.5, gamma: float = 2.0,
         min_h_instances: int = 3, max_h_instances: int = 15,
         min_o_instances: int = 3, max_o_instances: int = 15
     ) -> None:
@@ -47,7 +54,14 @@ class GenericHOIDetector(nn.Module):
         self.interaction_head = interaction_head
 
         self.box_score_thresh = box_score_thresh
+        self.fg_iou_thresh = fg_iou_thresh
+
         self.human_idx = human_idx
+        self.num_classes = num_classes
+
+        self.alpha = alpha
+        self.gamma = gamma
+
         self.min_h_instances = min_h_instances
         self.max_h_instances = max_h_instances
         self.min_o_instances = min_o_instances
@@ -79,11 +93,48 @@ class GenericHOIDetector(nn.Module):
             ))
         return object_targets
 
+    def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
+        n = boxes_h.shape[0]
+        labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
+
+        x, y = torch.nonzero(torch.min(
+            box_iou(boxes_h, targets["boxes_h"]),
+            box_iou(boxes_o, targets["boxes_o"])
+        ) >= self.fg_iou_thresh).unbind(1)
+
+        labels[x, targets["labels"][y]] = 1
+
+        return labels
+
     def compute_detection_loss(self, outputs, targets):
         loss_dict = self.criterion(outputs, targets)
         weight_dict = self.criterion.weight_dict
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
         return losses
+
+    def compute_interaction_loss(self, boxes, bh, bo, logits, prior, targets):
+        labels = torch.cat([
+            self.associate_with_ground_truth(bx[h], bx[o], target)
+            for bx, h, o, target in zip(boxes, bh, bo, targets)
+        ])
+        x, y = torch.nonzero(prior[0]).unbind(1)
+        logits = logits[x, y]; prior = prior[x, y]; labels = labels[x, y]
+
+        n_p = len(torch.nonzero(labels))
+        if dist.is_initialized():
+            world_size = dist.get_world_size()
+            n_p = torch.as_tensor([n_p], device='cuda')
+            dist.barrier()
+            dist.all_reduce(n_p)
+            n_p = (n_p / world_size).item()
+
+        loss = binary_cross_entropy(
+            torch.log(
+                (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
+            ), labels, reduction='sum'
+        )
+
+        return loss / n_p
 
     def prepare_region_proposals(self, boxes, scores, labels, hidden_states):
         results = []
@@ -126,6 +177,9 @@ class GenericHOIDetector(nn.Module):
 
         return results
 
+    def postprocessing(self):
+        pass
+
     def forward(self,
         images: List[Tensor],
         targets: Optional[List[dict]] = None
@@ -153,26 +207,36 @@ class GenericHOIDetector(nn.Module):
 
         src, mask = features[-1].decompose()
         assert mask is not None
-        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
+        hs = self.detector.transformer(self.detector.input_proj(src), mask, self.detector.query_embed.weight, pos[-1])[0]
 
-        outputs_class = self.class_embed(hs)
-        outputs_coord = self.bbox_embed(hs).sigmoid()
+        outputs_class = self.detector.class_embed(hs)
+        outputs_coord = self.detector.bbox_embed(hs).sigmoid()
 
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
-        if self.aux_loss:
-            results['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+        if self.detector.aux_loss:
+            results['aux_outputs'] = self.detector._set_aux_loss(outputs_class, outputs_coord)
 
         if self.training:
-            detector_loss = self.compute_detection_loss(results, object_targets)
+            detection_loss = self.compute_detection_loss(results, object_targets)
 
         scores, labels, boxes = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(boxes, scores, labels, hs)
 
-        outputs = self.interaction_head(
+        logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
             features, image_sizes, region_props
         )
+        boxes = [r['boxes'] for r in region_props]
 
-        return results
+        if self.training:
+            interaction_loss = self.compute_interaction_loss(boxes, bh, bo, logits, prior, targets)
+            loss_dict = dict(
+                detection_loss=detection_loss,
+                interaction_loss=interaction_loss
+            )
+            return loss_dict
+
+        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps)
+        return detections
 
 # class SpatiallyConditionedGraph(GenericHOINetwork):
 #     def __init__(self,
