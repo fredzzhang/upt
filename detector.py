@@ -67,10 +67,7 @@ class GenericHOIDetector(nn.Module):
     def generate_object_targets(self, targets, nms_thresh=0.7):
         object_targets = []
         for target in targets:
-            boxes = torch.cat([
-                target['boxes_h'],
-                target['boxes_o']
-            ])
+            boxes = target['boxes']
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
             boxes[:, :2] -= 1
@@ -95,8 +92,8 @@ class GenericHOIDetector(nn.Module):
         labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
 
         x, y = torch.nonzero(torch.min(
-            box_iou(boxes_h, targets["boxes_h"]),
-            box_iou(boxes_o, targets["boxes_o"])
+            box_iou(boxes_h, targets["boxes"][0::2]),
+            box_iou(boxes_o, targets["boxes"][1::2])
         ) >= self.fg_iou_thresh).unbind(1)
 
         labels[x, targets["labels"][y]] = 1
