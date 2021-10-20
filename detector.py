@@ -7,7 +7,6 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
-from math import gamma
 import os
 import torch
 import torch.distributed as dist
@@ -185,12 +184,12 @@ class GenericHOIDetector(nn.Module):
             boxes, bh, bo, logits, prior, objects, attn_maps
         ):
             pr = pr.prod(0)
-            x, y = torch.nonzero(pr)
+            x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
                 boxes=bx, pairing=torch.stack([h[x], o[x]]),
-                scores=scores * prior[x, y], objects=obj[y],
-                attn_maps=attn
+                scores=scores * prior[x, y], labels=y,
+                objects=obj[y], attn_maps=attn
             ))
 
         return detections
