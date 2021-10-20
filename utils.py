@@ -9,15 +9,13 @@ Australian Centre for Robotic Vision
 
 import os
 import json
-import time
+from pocket.ops import transforms
 import torch
 import numpy as np
 from tqdm import tqdm
 import torch.distributed as dist
 
 from torch.utils.data import Dataset
-from torchvision.ops.boxes import box_iou
-from torchvision.transforms.functional import hflip
 
 from vcoco.vcoco import VCOCO
 from hicodet.hicodet import HICODet
@@ -25,6 +23,10 @@ from hicodet.hicodet import HICODet
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
+
+import sys
+sys.path.append('detr')
+import datasets.transforms as T
 
 def custom_collate(batch):
     images = []
@@ -37,13 +39,7 @@ def custom_collate(batch):
     return images, detections, targets
 
 class DataFactory(Dataset):
-    def __init__(self,
-            name, partition,
-            data_root, detection_root,
-            flip=False,
-            box_score_thresh_h=0.2,
-            box_score_thresh_o=0.2
-            ):
+    def __init__(self, name, partition, data_root):
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -72,45 +68,35 @@ class DataFactory(Dataset):
             )
             self.human_idx = 1
 
-        self.name = name
-        self.detection_root = detection_root
+        # Prepare dataset transforms
+        normalize = T.Compose([
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+        scales = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
+        if partition.starts_with('train'):
+            self.transforms = T.Compose([
+                T.RandomHorizontalFlip(),
+                T.RandomSelect(
+                    T.RandomResize(scales, max_size=1333),
+                    T.Compose([
+                        T.RandomResize([400, 500, 600]),
+                        T.RandomSizeCrop(384, 600),
+                        T.RandomResize(scales, max_size=1333),
+                    ])
+                ),
+                normalize,
+            ])
+        else:
+            self.transforms = T.Compose([
+                T.RandomResize([800], max_size=1333),
+                normalize,
+            ])
 
-        self.box_score_thresh_h = box_score_thresh_h
-        self.box_score_thresh_o = box_score_thresh_o
-        self._flip = torch.randint(0, 2, (len(self.dataset),)) if flip \
-            else torch.zeros(len(self.dataset))
+        self.name = name
 
     def __len__(self):
         return len(self.dataset)
-
-    def filter_detections(self, detection):
-        """Perform NMS and remove low scoring examples"""
-
-        boxes = torch.as_tensor(detection['boxes'])
-        labels = torch.as_tensor(detection['labels'])
-        scores = torch.as_tensor(detection['scores'])
-
-        # Filter out low scoring human boxes
-        idx = torch.nonzero(labels == self.human_idx).squeeze(1)
-        keep_idx = idx[torch.nonzero(scores[idx] >= self.box_score_thresh_h).squeeze(1)]
-
-        # Filter out low scoring object boxes
-        idx = torch.nonzero(labels != self.human_idx).squeeze(1)
-        keep_idx = torch.cat([
-            keep_idx,
-            idx[torch.nonzero(scores[idx] >= self.box_score_thresh_o).squeeze(1)]
-        ])
-
-        boxes = boxes[keep_idx].view(-1, 4)
-        scores = scores[keep_idx].view(-1)
-        labels = labels[keep_idx].view(-1)
-
-        return dict(boxes=boxes, labels=labels, scores=scores)
-
-    def flip_boxes(self, detection, target, w):
-        detection['boxes'] = pocket.ops.horizontal_flip_boxes(w, detection['boxes'])
-        target['boxes_h'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_h'])
-        target['boxes_o'] = pocket.ops.horizontal_flip_boxes(w, target['boxes_o'])
 
     def __getitem__(self, i):
         image, target = self.dataset[i]
@@ -123,22 +109,15 @@ class DataFactory(Dataset):
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
+        bh = target.pop['boxes_h']; bo = target.pop['boxes_o']
+        # Interlace human boxes with object boxes
+        target['boxes'] = torch.cat([
+            torch.stack([h, o]) for h, o in zip(bh, bo)
+        ])
 
-        detection_path = os.path.join(
-            self.detection_root,
-            self.dataset.filename(i).replace('jpg', 'json')
-        )
-        with open(detection_path, 'r') as f:
-            detection = pocket.ops.to_tensor(json.load(f),
-                input_format='dict')
+        image, target = self.transforms(image, target)
 
-        if self._flip[i]:
-            image = hflip(image)
-            w, _ = image.size
-            self.flip_boxes(detection, target, w)
-        image = pocket.ops.to_tensor(image, 'pil')
-
-        return image, detection, target
+        return image, target
 
 def test(net, test_loader):
     testset = test_loader.dataset.dataset
