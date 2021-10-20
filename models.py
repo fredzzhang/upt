@@ -11,22 +11,15 @@ import torch
 import torch.distributed as dist
 
 import sys
-from torch.nn.functional import binary_cross_entropy
-from torchvision.models import detection
 sys.path.append('detr')
 from util.misc import nested_tensor_from_tensor_list
 
 from torch import nn, Tensor
-from torchvision.ops._utils import _cat
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from torchvision.ops.boxes import batched_nms, box_iou
-from torchvision.models.detection import transform
 
-import pocket.models as models
-
-from transforms import HOINetworkTransform
+from ops import binary_focal_loss
 from interaction_head import InteractionHead
-
 class GenericHOIDetector(nn.Module):
     """A generic architecture for HOI detector
 
@@ -129,7 +122,7 @@ class GenericHOIDetector(nn.Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
 
-        loss = binary_cross_entropy(
+        loss = binary_focal_loss(
             torch.log(
                 (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
             ), labels, reduction='sum'
