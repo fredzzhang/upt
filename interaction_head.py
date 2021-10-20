@@ -303,9 +303,9 @@ class InteractionHead(Module):
             hidden_size=representation_size,
             return_weights=True
         )
-        self.weighting_layer = WeightingLayer(
-            hidden_size=representation_size
-        )
+        # self.weighting_layer = WeightingLayer(
+        #     hidden_size=representation_size
+        # )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
             hidden_size=representation_size * 2,
             return_weights=True
@@ -549,7 +549,7 @@ class InteractionHead(Module):
         boxes_h_collated = []; boxes_o_collated = []
         prior_collated = []; object_class_collated = []
         pairwise_features_collated = []
-        attn_maps_collated = []; pairing_weights_collated = []
+        attn_maps_collated = []; # pairing_weights_collated = []
 
         for b_idx, props in enumerate(region_props):
             boxes = props['boxes']
@@ -569,7 +569,7 @@ class InteractionHead(Module):
                 boxes_o_collated.append(torch.zeros(0, 4, device=device))
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
-                pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
+                # pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
                 continue
             if not torch.all(labels[:n_h]==self.human_idx):
                 raise ValueError("Human detections are not permuted to the top")
@@ -599,7 +599,7 @@ class InteractionHead(Module):
             # Run the unary_layer
             unary_f, unary_attn = self.unary_layer(unary_f, box_pair_spatial_reshaped)
             # Run the weighting layer
-            pairing_weights = self.weighting_layer(unary_f, box_pair_spatial_reshaped, x_keep, y_keep)
+            # pairing_weights = self.weighting_layer(unary_f, box_pair_spatial_reshaped, x_keep, y_keep)
 
             pairwise_f = torch.cat([
                 self.attention_head(
@@ -621,11 +621,11 @@ class InteractionHead(Module):
                 x_keep, y_keep, scores, labels)
             )
             attn_maps_collated.append((unary_attn, pairwise_attn))
-            pairing_weights_collated.append(pairing_weights)
+            # pairing_weights_collated.append(pairing_weights)
 
         pairwise_features_collated = torch.cat(pairwise_features_collated)
         logits = self.box_pair_predictor(pairwise_features_collated)
-        pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
+        # pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
 
-        return logits, prior_collated, pairing_weights_collated, \
+        return logits, prior_collated, \
             boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
