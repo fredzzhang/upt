@@ -180,8 +180,8 @@ class GenericHOIDetector(nn.Module):
         return region_props
 
     def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps):
-        n = [len(b) for b in boxes]
-        logits.split(n)
+        n = [len(b) for b in bh]
+        logits = logits.split(n)
 
         detections = []
         for bx, h, o, lg, pr, obj, attn in zip(
@@ -192,8 +192,8 @@ class GenericHOIDetector(nn.Module):
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
                 boxes=bx, pairing=torch.stack([h[x], o[x]]),
-                scores=scores * prior[x, y], labels=y,
-                objects=obj[y], attn_maps=attn
+                scores=scores * pr[x, y], labels=y,
+                objects=obj, attn_maps=attn
             ))
 
         return detections
