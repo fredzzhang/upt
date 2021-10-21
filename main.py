@@ -8,6 +8,7 @@ Australian Centre for Robotic Vision
 """
 
 import os
+import sys
 import torch
 import random
 import argparse
@@ -113,6 +114,19 @@ def main(rank, args):
 
     engine(args.num_epochs)
 
+@torch.no_grad()
+def sanity_check(args):
+    dataset = DataFactory(name='hicodet', partition=args.partitions[0], data_root=args.data_root)
+    args.human_idx = 49; args.num_classes = 117
+    object_to_target = dataset.dataset.object_to_verb
+    detector = build_detector(args, object_to_target)
+    if args.eval:
+        detector.eval()
+
+    image, target = dataset[0]
+    outputs = detector([image], [target])
+
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
@@ -150,9 +164,10 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', default=0.5, type=float)
     parser.add_argument('--gamma', default=2.0, type=float)
 
+    parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
     parser.add_argument('--num-workers', default=2, type=int)
-    parser.add_argument('--data-root', default='../')
+    parser.add_argument('--data-root', default='./hicodet')
 
     # training parameters
     parser.add_argument('--device', default='cuda',
@@ -175,6 +190,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     print(args)
+
+    if args.sanity:
+        sanity_check(args)
+        sys.exit()
 
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = args.port
