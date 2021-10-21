@@ -257,7 +257,7 @@ def build_detector(args, class_corr):
     predictor = torch.nn.Linear(args.hidden_dim * 2, args.num_classes)
     interaction_head = InteractionHead(predictor, args.hidden_dim, class_corr)
     detector = GenericHOIDetector(
-        detr, criterion, postprocessors, interaction_head,
+        detr, criterion, postprocessors['bbox'], interaction_head,
         box_score_thresh=args.box_score_thresh,
         fg_iou_thresh=args.fg_iou_thresh,
         human_idx=args.human_idx, num_classes=args.num_classes,
