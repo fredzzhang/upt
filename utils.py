@@ -71,7 +71,7 @@ class DataFactory(Dataset):
             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
         scales = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
-        if partition.starts_with('train'):
+        if partition.startswith('train'):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
                 T.RandomSelect(
