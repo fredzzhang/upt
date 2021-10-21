@@ -9,18 +9,15 @@ Australian Centre for Robotic Vision
 
 import torch
 import torch.nn.functional as F
-import torch.distributed as dist
-import torchvision.ops.boxes as box_ops
 
 from torch.nn import Module
 from torch import nn, Tensor
-from pocket.ops import Flatten
-from typing import Optional, List, Tuple
+from typing import List
 from collections import OrderedDict
 
 import pocket
 
-from ops import compute_spatial_encodings, binary_focal_loss
+from ops import compute_spatial_encodings
 
 class MultiBranchFusion(Module):
     """
@@ -379,8 +376,15 @@ class InteractionHead(Module):
             labels = props['labels']
             unary_f = props['hidden_states']
 
-            n_h = torch.sum(labels == self.human_idx).item()
-            n = len(boxes)
+            is_human = labels == self.human_idx
+            n_h = torch.sum(is_human); n = len(boxes)
+            # Permute human instances to the top
+            if not torch.all(labels[:n_h]==self.human_idx):
+                h_idx = torch.nonzero(is_human).squeeze(1)
+                o_idx = torch.nonzero(is_human == 0).squeeze(1)
+                perm = torch.cat([h_idx, o_idx])
+                boxes = boxes[perm]; scores = scores[perm]
+                labels = labels[perm]; unary_f = unary_f[perm]
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_features_collated.append(torch.zeros(
@@ -393,8 +397,6 @@ class InteractionHead(Module):
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 # pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
                 continue
-            if not torch.all(labels[:n_h]==self.human_idx):
-                raise ValueError("Human detections are not permuted to the top")
 
             # Get the pairwise indices
             x, y = torch.meshgrid(
