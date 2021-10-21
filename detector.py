@@ -91,12 +91,18 @@ class GenericHOIDetector(nn.Module):
         n = boxes_h.shape[0]
         labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
 
+        gt_boxes = targets['boxes']
+        gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
+        h, w = targets['size']
+        scale_fct = torch.stack([w, h, w, h], device=gt_boxes.device)
+        gt_boxes *= scale_fct
+
         x, y = torch.nonzero(torch.min(
-            box_iou(boxes_h, targets["boxes"][0::2]),
-            box_iou(boxes_o, targets["boxes"][1::2])
+            box_iou(boxes_h, gt_boxes[0::2]),
+            box_iou(boxes_o, gt_boxes[1::2])
         ) >= self.fg_iou_thresh).unbind(1)
 
-        labels[x, targets["labels"][y]] = 1
+        labels[x, targets['labels'][y]] = 1
 
         return labels
 
@@ -140,7 +146,7 @@ class GenericHOIDetector(nn.Module):
                 is_human = lb == self.human_idx
                 hum = torch.nonzero(is_human).squeeze(1)
                 obj = torch.nonzero(is_human == 0).squeeze(1)
-                n_human = len(hum); n_object = len(obj)
+                n_human = is_human[keep].sum(); n_object = len(keep) - n_human
                 # Keep the number of human and object instances in a specified interval
                 if n_human < self.min_h_instances:
                     keep_h = sc[hum].argsort(descending=True)[:self.min_h_instances]
@@ -256,7 +262,10 @@ def build_detector(args, class_corr):
         print(f"Load pre-trained model from {args.pretrained}")
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
     predictor = torch.nn.Linear(args.hidden_dim * 2, args.num_classes)
-    interaction_head = InteractionHead(predictor, args.hidden_dim, detr.backbone[0].num_channels, class_corr)
+    interaction_head = InteractionHead(
+        predictor, args.hidden_dim, detr.backbone[0].num_channels,
+        args.num_classes, args.human_idx, class_corr
+    )
     detector = GenericHOIDetector(
         detr, criterion, postprocessors['bbox'], interaction_head,
         box_score_thresh=args.box_score_thresh,
