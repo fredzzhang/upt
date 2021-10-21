@@ -106,7 +106,7 @@ class DataFactory(Dataset):
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
-        bh = target.pop['boxes_h']; bo = target.pop['boxes_o']
+        bh = target.pop('boxes_h'); bo = target.pop('boxes_o')
         # Interlace human boxes with object boxes
         target['boxes'] = torch.cat([
             torch.stack([h, o]) for h, o in zip(bh, bo)
