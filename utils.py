@@ -9,9 +9,7 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
-import numpy as np
 from tqdm import tqdm
-import torch.distributed as dist
 
 from torch.utils.data import Dataset
 
@@ -20,7 +18,7 @@ from hicodet.hicodet import HICODet
 
 import pocket
 from pocket.core import DistributedLearningEngine
-from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_gather
+from pocket.utils import DetectionAPMeter, BoxPairAssociation
 
 import sys
 sys.path.append('detr')
@@ -106,57 +104,6 @@ class DataFactory(Dataset):
         image, target = self.transforms(image, target)
 
         return image, target
-
-def test(net, test_loader):
-    testset = test_loader.dataset.dataset
-    associate = BoxPairAssociation(min_iou=0.5)
-
-    meter = DetectionAPMeter(
-        600, nproc=1,
-        num_gt=testset.anno_interaction,
-        algorithm='11P'
-    )
-    net.eval()
-    for batch in tqdm(test_loader):
-        inputs = pocket.ops.relocate_to_cuda(batch[:-1])
-        with torch.no_grad():
-            output = net(*inputs)
-        if output is None or len(output) == 0:
-            continue
-
-        # Batch size is fixed as 1 for inference
-        assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
-        output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
-        target = batch[-1][0]
-        # Format detections
-        boxes = output['boxes']
-        boxes_h = boxes[output['boxes_h']]
-        boxes_o = boxes[output['boxes_o']]
-        objects = output['object']
-        scores = output['scores']
-        verbs = output['prediction']
-        interactions = torch.tensor([
-            testset.object_n_verb_to_interaction[o][v]
-            for o, v in zip(objects, verbs)
-        ])
-        # Associate detected pairs with ground truth pairs
-        labels = torch.zeros_like(scores)
-        unique_hoi = interactions.unique()
-        for hoi_idx in unique_hoi:
-            gt_idx = torch.nonzero(target['hoi'] == hoi_idx).squeeze(1)
-            det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
-            if len(gt_idx):
-                labels[det_idx] = associate(
-                    (target['boxes_h'][gt_idx].view(-1, 4),
-                    target['boxes_o'][gt_idx].view(-1, 4)),
-                    (boxes_h[det_idx].view(-1, 4),
-                    boxes_o[det_idx].view(-1, 4)),
-                    scores[det_idx].view(-1)
-                )
-
-        meter.append(scores, interactions, labels)
-
-    return meter.eval()
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, dataloader, num_classes=117, **kwargs):
