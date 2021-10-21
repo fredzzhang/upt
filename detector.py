@@ -22,6 +22,7 @@ from interaction_head import InteractionHead
 import sys
 sys.path.append('detr')
 from models import build_model
+from util import box_ops
 from util.misc import nested_tensor_from_tensor_list
 
 class GenericHOIDetector(nn.Module):
@@ -71,12 +72,12 @@ class GenericHOIDetector(nn.Module):
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
             labels = torch.cat([
-                self.human_idx * torch.ones_like(target['object']),
-                target['object']
+                torch.stack([h, o]) for h, o in
+                zip(self.human_idx * torch.ones_like(target['object']), target['object'])
             ])
             # Remove overlapping ground truth boxes
             keep = batched_nms(
-                boxes, torch.ones(len(boxes)),
+                box_ops.box_cxcywh_to_xyxy(boxes), torch.ones(len(boxes)),
                 labels, iou_threshold=nms_thresh
             )
             boxes = boxes[keep]
@@ -131,7 +132,7 @@ class GenericHOIDetector(nn.Module):
         return loss / n_p
 
     def prepare_region_proposals(self, results, hidden_states):
-        results = []
+        region_props = []
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
             keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
@@ -163,14 +164,14 @@ class GenericHOIDetector(nn.Module):
 
                 keep = torch.cat([keep_h, keep_o])
 
-            results.append(dict(
+            region_props.append(dict(
                 boxes=bx[keep],
                 scores=sc[keep],
                 labels=lb[keep],
                 hidden_states=hs[keep]
             ))
 
-        return results
+        return region_props
 
     def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps):
         n = [len(b) for b in boxes]
@@ -231,7 +232,7 @@ class GenericHOIDetector(nn.Module):
             detection_loss = self.compute_detection_loss(results, object_targets)
 
         results = self.postprocessors(results, image_sizes)
-        region_props = self.prepare_region_proposals(results, hs)
+        region_props = self.prepare_region_proposals(results, hs[-1])
 
         logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
             features[-1].tensors, image_sizes, region_props
