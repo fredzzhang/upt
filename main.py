@@ -121,8 +121,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr-head', default=1e-4, type=float)
     parser.add_argument('--batch-size', default=2, type=int)
     parser.add_argument('--weight-decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=300, type=int)
-    parser.add_argument('--lr-drop', default=200, type=int)
+    parser.add_argument('--epochs', default=20, type=int)
+    parser.add_argument('--lr-drop', default=15, type=int)
     parser.add_argument('--clip-max-norm', default=0.1, type=float)
 
     parser.add_argument('--backbone', default='resnet50', type=str)
@@ -138,13 +138,10 @@ if __name__ == '__main__':
     parser.add_argument('--num-queries', default=100, type=int)
     parser.add_argument('--pre-norm', action='store_true')
 
-    # Loss
     parser.add_argument('--no-aux-loss', dest='aux_loss', action='store_false')
-    # * Matcher
     parser.add_argument('--set-cost-class', default=1, type=float)
     parser.add_argument('--set-cost-bbox', default=5, type=float)
     parser.add_argument('--set-cost-giou', default=2, type=float)
-    # * Loss coefficients
     parser.add_argument('--bbox-loss-coef', default=5, type=float)
     parser.add_argument('--giou-loss-coef', default=2, type=float)
     parser.add_argument('--eos-coef', default=0.1, type=float,
