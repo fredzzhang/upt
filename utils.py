@@ -8,8 +8,6 @@ Australian Centre for Robotic Vision
 """
 
 import os
-import json
-from pocket.ops import transforms
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -26,6 +24,7 @@ from pocket.utils import DetectionAPMeter, HandyTimer, BoxPairAssociation, all_g
 
 import sys
 sys.path.append('detr')
+from util import box_ops
 import datasets.transforms as T
 
 def custom_collate(batch):
@@ -171,96 +170,94 @@ def test(net, test_loader):
     return meter.eval()
 
 class CustomisedDLE(DistributedLearningEngine):
-    def __init__(self, net, train_loader, val_loader, num_classes=117, **kwargs):
-        super().__init__(net, None, train_loader, **kwargs)
-        self.val_loader = val_loader
+    def __init__(self, net, dataloader, num_classes=117, **kwargs):
+        super().__init__(net, None, dataloader, **kwargs)
         self.num_classes = num_classes
 
     def _on_start(self):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-        self.hoi_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.intr_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.detection_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.interaction_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
-        self._state.optimizer.zero_grad()
-        output = self._state.net(
+        loss_dict = self._state.net(
             *self._state.inputs, targets=self._state.targets)
-        loss_dict = output.pop()
-        if loss_dict['hoi_loss'].isnan():
+        if loss_dict['interaction_loss'].isnan():
             raise ValueError(f"The HOI loss is NaN for rank {self._rank}")
 
         self._state.loss = sum(loss for loss in loss_dict.values())
+        self._state.optimizer.zero_grad(set_to_none=True)
         self._state.loss.backward()
         self._state.optimizer.step()
 
-        self.hoi_loss.append(loss_dict['hoi_loss'])
-        self.intr_loss.append(loss_dict['interactiveness_loss'])
-
-        self._synchronise_and_log_results(output, self.meter)
-
-    def _on_end_epoch(self):
-        timer = HandyTimer(maxlen=2)
-        # Compute training mAP
-        if self._rank == 0:
-            with timer:
-                ap_train = self.meter.eval()
-        # Run validation and compute mAP
-        with timer:
-            ap_val = self.validate()
-        # Print performance and time
-        if self._rank == 0:
-            print("Epoch: {} | training mAP: {:.4f}, evaluation time: {:.2f}s |"
-                "validation mAP: {:.4f}, total time: {:.2f}s\n".format(
-                    self._state.epoch, ap_train.mean().item(), timer[0],
-                    ap_val.mean().item(), timer[1]
-            ))
-            self.meter.reset()
-        super()._on_end_epoch()
+        self.detection_loss.append(loss_dict['detection_loss'])
+        self.interaction_loss.append(loss_dict['interaction_loss'])
 
     def _print_statistics(self):
         super()._print_statistics()
-        hoi_loss = self.hoi_loss.mean()
-        intr_loss = self.intr_loss.mean()
+        detection_loss = self.detection_loss.mean()
+        interaction_loss = self.interaction_loss.mean()
         if self._rank == 0:
-            print(f"=> HOI classification loss: {hoi_loss:.4f},",
-            f"interactiveness loss: {intr_loss:.4f}")
-        self.hoi_loss.reset()
-        self.intr_loss.reset()
-
-    def _synchronise_and_log_results(self, output, meter):
-        scores = []; pred = []; labels = []
-        # Collate results within the batch
-        for result in output:
-            scores.append(result['scores'].detach().cpu().numpy())
-            pred.append(result['prediction'].cpu().float().numpy())
-            labels.append(result["labels"].cpu().numpy())
-        # Sync across subprocesses
-        all_results = np.stack([
-            np.concatenate(scores),
-            np.concatenate(pred),
-            np.concatenate(labels)
-        ])
-        all_results_sync = all_gather(all_results)
-        # Collate and log results in master process
-        if self._rank == 0:
-            scores, pred, labels = torch.from_numpy(
-                np.concatenate(all_results_sync, axis=1)
-            ).unbind(0)
-            meter.append(scores, pred, labels)
+            print(f"=> Detection loss: {detection_loss:.4f},",
+            f"interaction loss: {interaction_loss:.4f}")
+        self.detection_loss.reset()
+        self.interaction_loss.reset()
 
     @torch.no_grad()
-    def validate(self):
-        meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-        
-        self._state.net.eval()
-        for batch in self.val_loader:
-            inputs = pocket.ops.relocate_to_cuda(batch)
-            results = self._state.net(*inputs)
+    def test_hico(self, dataloader):
+        net = self._state.net()
+        net.eval()
 
-            self._synchronise_and_log_results(results, meter)
+        dataset = dataloader.dataset.dataset
+        associate = BoxPairAssociation(min_iou=0.5)
 
-        # Evaluate mAP in master process
-        if self._rank == 0:
-            return meter.eval()
-        else:
-            return None
+        meter = DetectionAPMeter(
+            600, nproc=1,
+            num_gt=dataset.anno_interaction,
+            algorithm='11P'
+        )
+        for batch in tqdm(dataloader):
+            inputs = pocket.ops.relocate_to_cuda(batch[0])
+            output = net(inputs)
+            # Skip images without detections
+            if output is None or len(output) == 0:
+                continue
+
+            # Batch size is fixed as 1 for inference
+            assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
+            output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
+            target = batch[-1][0]
+            # Format detections
+            boxes = output['boxes']
+            boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
+            objects = output['objects']
+            scores = output['scores']
+            verbs = output['labels']
+            interactions = torch.tensor([
+                dataset.object_n_verb_to_interaction[o][v]
+                for o, v in zip(objects, verbs)
+            ])
+            # Recover target box scale
+            gt_boxes = target['boxes']
+            gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
+            h, w = target['size']
+            scale_fct = torch.stack([w, h, w, h])
+            gt_boxes *= scale_fct
+            # Associate detected pairs with ground truth pairs
+            labels = torch.zeros_like(scores)
+            unique_hoi = interactions.unique()
+            for hoi_idx in unique_hoi:
+                gt_idx = torch.nonzero(target['hoi'] == hoi_idx).squeeze(1)
+                det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
+                if len(gt_idx):
+                    labels[det_idx] = associate(
+                        (gt_boxes[0::2][gt_idx].view(-1, 4),
+                        gt_boxes[1::2][gt_idx].view(-1, 4)),
+                        (boxes_h[det_idx].view(-1, 4),
+                        boxes_o[det_idx].view(-1, 4)),
+                        scores[det_idx].view(-1)
+                    )
+
+            meter.append(scores, interactions, labels)
+
+        return meter.eval()
