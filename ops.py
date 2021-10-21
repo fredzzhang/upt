@@ -74,7 +74,7 @@ def compute_spatial_encodings(
         )
     return torch.cat(features)
 
-def binary_focal_loss(
+def binary_focal_loss_with_logits(
     x: Tensor, y: Tensor,
     alpha: float = 0.5,
     gamma: float = 2.0,
@@ -107,8 +107,8 @@ def binary_focal_loss(
         loss: Tensor
             Computed loss tensor
     """
-    loss = (1 - y - alpha).abs() * ((y-x).abs() + eps) ** gamma * \
-        torch.nn.functional.binary_cross_entropy(
+    loss = (1 - y - alpha).abs() * ((y-torch.sigmoid(x)).abs() + eps) ** gamma * \
+        torch.nn.functional.binary_cross_entropy_with_logits(
             x, y, reduction='none'
         )
     if reduction == 'mean':
