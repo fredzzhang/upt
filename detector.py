@@ -16,7 +16,7 @@ from torch import nn, Tensor
 from typing import Optional, List
 from torchvision.ops.boxes import batched_nms, box_iou
 
-from ops import binary_focal_loss
+from ops import binary_focal_loss_with_logits
 from interaction_head import InteractionHead
 
 import sys
@@ -94,7 +94,7 @@ class GenericHOIDetector(nn.Module):
         gt_boxes = targets['boxes']
         gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
         h, w = targets['size']
-        scale_fct = torch.stack([w, h, w, h], device=gt_boxes.device)
+        scale_fct = torch.stack([w, h, w, h])
         gt_boxes *= scale_fct
 
         x, y = torch.nonzero(torch.min(
@@ -129,7 +129,7 @@ class GenericHOIDetector(nn.Module):
             dist.all_reduce(n_p)
             n_p = (n_p / world_size).item()
 
-        loss = binary_focal_loss(
+        loss = binary_focal_loss_with_logits(
             torch.log(
                 (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
             ), labels, reduction='sum'
