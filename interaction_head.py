@@ -235,10 +235,11 @@ class InteractionHead(Module):
         the number of positive logits will be averaged across all subprocesses
     """
     def __init__(self,
-        # Network components
         box_pair_predictor: Module,
         hidden_state_size: int,
         num_channels: int,
+        num_classes: int,
+        human_idx: int,
         object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
@@ -246,6 +247,8 @@ class InteractionHead(Module):
         self.box_pair_predictor = box_pair_predictor
 
         self.hidden_state_size = hidden_state_size
+        self.num_classes = num_classes
+        self.human_idx = human_idx
         self.object_class_to_target_class = object_class_to_target_class
 
         # Map spatial encodings to the same dimension as appearance features
