@@ -9,17 +9,16 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
+import random
 import argparse
 import torchvision
+import numpy as np
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
-import pocket
-from pocket.data import HICODet
-
-from models import SpatiallyConditionedGraph as SCG
-from utils import custom_collate, CustomisedDLE, DataFactory
+from detector import build_detector
+from utils import custom_collate, CustomisedDLE, DataFactory, test
 
 def main(rank, args):
 
@@ -30,145 +29,157 @@ def main(rank, args):
         rank=rank
     )
 
-    trainset = DataFactory(
-        name=args.dataset, partition=args.partitions[0],
-        data_root=args.data_root,
-        detection_root=args.train_detection_dir,
-        flip=True
-    )
+    # Fix seed
+    seed = args.seed + dist.get_rank()
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
-    valset = DataFactory(
-        name=args.dataset, partition=args.partitions[1],
-        data_root=args.data_root,
-        detection_root=args.val_detection_dir
-    )
+    trainset = DataFactory(name=args.dataset, partition=args.partitions[0], data_root=args.data_root)
+    testset = DataFactory(name=args.dataset, partition=args.partitions[1], data_root=args.data_root)
 
     train_loader = DataLoader(
         dataset=trainset,
         collate_fn=custom_collate, batch_size=args.batch_size,
-        num_workers=args.num_workers, pin_memory=True,
+        num_workers=args.num_workers, pin_memory=True, drop_last=True,
         sampler=DistributedSampler(
             trainset, 
             num_replicas=args.world_size, 
             rank=rank)
     )
-
-    val_loader = DataLoader(
-        dataset=valset,
-        collate_fn=custom_collate, batch_size=args.batch_size,
-        num_workers=args.num_workers, pin_memory=True,
-        sampler=DistributedSampler(
-            valset, 
-            num_replicas=args.world_size, 
-            rank=rank)
+    test_loader = DataLoader(
+        dataset=testset,
+        collate_fn=custom_collate, batch_size=1,
+        num_workers=args.num_workers, pin_memory=True, drop_last=False,
+        sampler=torch.utils.data.SequentialSampler(testset)
     )
-
-    # Fix random seed for model synchronisation
-    torch.manual_seed(args.random_seed)
 
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
-        human_idx = 49
-        num_classes = 117
+        args.human_idx = 49
+        args.num_classes = 117
     elif args.dataset == 'vcoco':
         object_to_target = train_loader.dataset.dataset.object_to_action
-        human_idx = 1
-        num_classes = 24
-    net = SCG(
-        object_to_target, human_idx, num_classes=num_classes,
-        num_iterations=args.num_iter, postprocess=False,
-        max_human=args.max_human, max_object=args.max_object,
-        box_score_thresh=args.box_score_thresh,
-        distributed=True
-    )
+        args.human_idx = 1
+        args.num_classes = 24
+    
+    detector = build_detector(args, object_to_target)
 
-    if os.path.exists(args.checkpoint_path):
-        print("=> Rank {}: continue from saved checkpoint".format(
-            rank), args.checkpoint_path)
-        checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
-        net.load_state_dict(checkpoint['model_state_dict'])
-        optim_state_dict = checkpoint['optim_state_dict']
-        sched_state_dict = checkpoint['scheduler_state_dict']
-        epoch = checkpoint['epoch']
-        iteration = checkpoint['iteration']
+    if os.path.exists(args.resume):
+        print(f"=> Rank {rank}: continue from saved checkpoint {args.resume}")
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        detector.load_state_dict(checkpoint['model_state_dict'])
+        # optim_state_dict = checkpoint['optim_state_dict']
+        # sched_state_dict = checkpoint['scheduler_state_dict']
+        # epoch = checkpoint['epoch']
+        # iteration = checkpoint['iteration']
     else:
-        print("=> Rank {}: start from a randomly initialised model".format(rank))
-        optim_state_dict = None
-        sched_state_dict = None
-        epoch = 0; iteration = 0
+        print(f"=> Rank {rank}: start from a randomly initialised model")
 
     engine = CustomisedDLE(
-        net,
+        detector,
         train_loader,
-        val_loader,
-        num_classes=num_classes,
+        num_classes=args.num_classes,
         print_interval=args.print_interval,
-        cache_dir=args.cache_dir
+        cache_dir=args.output_dir
     )
+
+    if args.eval():
+        ap = engine.test_hico(test_loader)
+        print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
+
     # Seperate backbone parameters from the rest
-    param_group_1 = []
-    param_group_2 = []
-    for k, v in engine.fetch_state_key('net').named_parameters():
-        if v.requires_grad:
-            if k.startswith('module.backbone'):
-                param_group_1.append(v)
-            elif k.startswith('module.interaction_head'):
-                param_group_2.append(v)
-            else:
-                raise KeyError(f"Unknown parameter name {k}")
+    param_dicts = [
+        {
+            "params": [p for n, p in detector.named_parameters()
+            if "backbone" in n and p.requires_grad], "lr": args.lr_backbone
+        }, {
+            "params": [p for n, p in detector.named_parameters()
+            if "detector" in n and "backbone" not in n and p.requires_grad],
+            "lr": args.lr_transformer
+        }, {
+            "params": [p for n, p in detector.named_parameters()
+            if "interaction_head" in n and p.requires_grad]
+        }
+    ]
     # Fine-tune backbone with lower learning rate
-    optim = torch.optim.AdamW([
-        {'params': param_group_1, 'lr': args.learning_rate * args.lr_decay},
-        {'params': param_group_2}
-        ], lr=args.learning_rate,
+    optim = torch.optim.AdamW(
+        param_dicts, lr=args.lr_head,
         weight_decay=args.weight_decay
     )
-    lambda1 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
-    lambda2 = lambda epoch: 1. if epoch < args.milestones[0] else args.lr_decay
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optim, lr_lambda=[lambda1, lambda2]
-    )
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optim, args.lr_drop)
     # Override optimiser and learning rate scheduler
     engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
-    engine.update_state_key(epoch=epoch, iteration=iteration)
 
     engine(args.num_epochs)
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--world-size', required=True, type=int,
-                        help="Number of subprocesses/GPUs to use")
-    parser.add_argument('--dataset', default='hicodet', type=str)
-    parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
-    parser.add_argument('--data-root', default='hicodet', type=str)
-    parser.add_argument('--train-detection-dir', default='hicodet/detections/train2015', type=str)
-    parser.add_argument('--val-detection-dir', default='hicodet/detections/test2015', type=str)
-    parser.add_argument('--num-iter', default=2, type=int,
-                        help="Number of iterations to run message passing")
-    parser.add_argument('--num-epochs', default=8, type=int)
-    parser.add_argument('--random-seed', default=1, type=int)
-    parser.add_argument('--learning-rate', default=0.0001, type=float)
-    parser.add_argument('--momentum', default=0.9, type=float)
+    parser.add_argument('--lr-transformer', default=1e-5, type=float)
+    parser.add_argument('--lr-backbone', default=1e-6, type=float)
+    parser.add_argument('--lr-head', default=1e-4, type=float)
+    parser.add_argument('--batch-size', default=2, type=int)
     parser.add_argument('--weight-decay', default=1e-4, type=float)
-    parser.add_argument('--batch-size', default=4, type=int,
-                        help="Batch size for each subprocess")
-    parser.add_argument('--lr-decay', default=0.1, type=float,
-                        help="The multiplier by which the learning rate is reduced")
+    parser.add_argument('--epochs', default=300, type=int)
+    parser.add_argument('--lr-drop', default=200, type=int)
+    parser.add_argument('--clip-max-norm', default=0.1, type=float)
+
+    parser.add_argument('--backbone', default='resnet50', type=str)
+    parser.add_argument('--dilation', action='store_true')
+    parser.add_argument('--position-embedding', default='sine', type=str, choices=('sine', 'learned'))
+
+    parser.add_argument('--enc-layers', default=6, type=int)
+    parser.add_argument('--dec-layers', default=6, type=int)
+    parser.add_argument('--dim-feedforward', default=2048, type=int)
+    parser.add_argument('--hidden-dim', default=256, type=int)
+    parser.add_argument('--dropout', default=0.1, type=float)
+    parser.add_argument('--nheads', default=8, type=int)
+    parser.add_argument('--num-queries', default=100, type=int)
+    parser.add_argument('--pre-norm', action='store_true')
+
+    # Loss
+    parser.add_argument('--no-aux-loss', dest='aux_loss', action='store_false')
+    # * Matcher
+    parser.add_argument('--set-cost-class', default=1, type=float)
+    parser.add_argument('--set-cost-bbox', default=5, type=float)
+    parser.add_argument('--set-cost-giou', default=2, type=float)
+    # * Loss coefficients
+    parser.add_argument('--bbox-loss-coef', default=5, type=float)
+    parser.add_argument('--giou-loss-coef', default=2, type=float)
+    parser.add_argument('--eos-coef', default=0.1, type=float,
+                        help="Relative classification weight of the no-object class")
+
+    parser.add_argument('--alpha', default=0.5, type=float)
+    parser.add_argument('--gamma', default=2.0, type=float)
+
+    parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
+    parser.add_argument('--num-workers', default=2, type=int)
+    parser.add_argument('--data-root', default='../')
+
+    # training parameters
+    parser.add_argument('--device', default='cuda',
+                        help='device to use for training / testing')
+    parser.add_argument('--port', default='1234', type=str)
+    parser.add_argument('--seed', default=66, type=int)
+    parser.add_argument('--pretrained', default='', help='Path to a pretrained detector')
+    parser.add_argument('--resume', default='', help='Resume from a model')
+    parser.add_argument('--output-dir', default='checkpoints')
+    parser.add_argument('--print-interval', default=500, type=int)
+    parser.add_argument('--world-size', default=1, type=int)
+    parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--max-human', default=15, type=int)
-    parser.add_argument('--max-object', default=15, type=int)
-    parser.add_argument('--milestones', nargs='+', default=[6,], type=int,
-                        help="The epoch number when learning rate is reduced")
-    parser.add_argument('--num-workers', default=4, type=int)
-    parser.add_argument('--print-interval', default=300, type=int)
-    parser.add_argument('--checkpoint-path', default='', type=str)
-    parser.add_argument('--cache-dir', type=str, default='./checkpoints')
+    parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
+    parser.add_argument('--min-h', default=3, type=int)
+    parser.add_argument('--min-o', default=3, type=int)
+    parser.add_argument('--max-h', default=15, type=int)
+    parser.add_argument('--max-o', default=15, type=int)
 
     args = parser.parse_args()
     print(args)
 
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "8888"
+    os.environ["MASTER_PORT"] = args.port
 
     mp.spawn(main, nprocs=args.world_size, args=(args,))
