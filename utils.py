@@ -48,7 +48,6 @@ class DataFactory(Dataset):
                 anno_file=os.path.join(data_root, 'instances_{}.json'.format(partition)),
                 target_transform=pocket.ops.ToTensor(input_format='dict')
             )
-            self.human_idx = 49
         else:
             assert partition in ['train', 'val', 'trainval', 'test'], \
                 "Unknown V-COCO partition " + partition
@@ -63,7 +62,6 @@ class DataFactory(Dataset):
                 anno_file=os.path.join(data_root, 'instances_vcoco_{}.json'.format(partition)
                 ), target_transform=pocket.ops.ToTensor(input_format='dict')
             )
-            self.human_idx = 1
 
         # Prepare dataset transforms
         normalize = T.Compose([
@@ -74,14 +72,7 @@ class DataFactory(Dataset):
         if partition.startswith('train'):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
-                T.RandomSelect(
-                    T.RandomResize(scales, max_size=1333),
-                    T.Compose([
-                        T.RandomResize([400, 500, 600]),
-                        T.RandomSizeCrop(384, 600),
-                        T.RandomResize(scales, max_size=1333),
-                    ])
-                ),
+                T.RandomResize(scales, max_size=1333),
                 normalize,
             ])
         else:
