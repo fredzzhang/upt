@@ -29,13 +29,11 @@ import datasets.transforms as T
 
 def custom_collate(batch):
     images = []
-    detections = []
     targets = []
-    for im, det, tar in batch:
+    for im, tar in batch:
         images.append(im)
-        detections.append(det)
         targets.append(tar)
-    return images, detections, targets
+    return images, targets
 
 class DataFactory(Dataset):
     def __init__(self, name, partition, data_root):
