@@ -238,6 +238,7 @@ class InteractionHead(Module):
         # Network components
         box_pair_predictor: Module,
         hidden_state_size: int,
+        num_channels: int,
         object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
@@ -279,7 +280,7 @@ class InteractionHead(Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
         # Attention head for global features
         self.attention_head_g = MultiBranchFusion(
-            256, hidden_state_size,
+            num_channels, hidden_state_size,
             hidden_state_size, cardinality=16
         )
 
