@@ -19,7 +19,7 @@ import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
 from detector import build_detector
-from utils import custom_collate, CustomisedDLE, DataFactory, test
+from utils import custom_collate, CustomisedDLE, DataFactory
 
 def main(rank, args):
 
@@ -57,7 +57,7 @@ def main(rank, args):
 
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
-        args.human_idx = 49
+        args.human_idx = 0
         args.num_classes = 117
     elif args.dataset == 'vcoco':
         object_to_target = train_loader.dataset.dataset.object_to_action
@@ -117,7 +117,7 @@ def main(rank, args):
 @torch.no_grad()
 def sanity_check(args):
     dataset = DataFactory(name='hicodet', partition=args.partitions[0], data_root=args.data_root)
-    args.human_idx = 49; args.num_classes = 117
+    args.human_idx = 0; args.num_classes = 117
     object_to_target = dataset.dataset.object_to_verb
     detector = build_detector(args, object_to_target)
     if args.eval:
@@ -125,7 +125,6 @@ def sanity_check(args):
 
     image, target = dataset[0]
     outputs = detector([image], [target])
-
 
 if __name__ == '__main__':
     
