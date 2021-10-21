@@ -70,9 +70,8 @@ class GenericHOIDetector(nn.Module):
             boxes = target['boxes']
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
-            boxes[:, :2] -= 1
             labels = torch.cat([
-                49 * torch.ones_like(target['object']),
+                self.human_idx * torch.ones_like(target['object']),
                 target['object']
             ])
             # Remove overlapping ground truth boxes
@@ -131,9 +130,10 @@ class GenericHOIDetector(nn.Module):
 
         return loss / n_p
 
-    def prepare_region_proposals(self, boxes, scores, labels, hidden_states):
+    def prepare_region_proposals(self, results, hidden_states):
         results = []
-        for bx, sc, lb, hs in zip(boxes, scores, labels, hidden_states):
+        for res, hs in zip(results, hidden_states):
+            sc, lb, bx = res.values()
             keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
             if self.training:
                 is_human = lb == self.human_idx
@@ -230,11 +230,11 @@ class GenericHOIDetector(nn.Module):
         if self.training:
             detection_loss = self.compute_detection_loss(results, object_targets)
 
-        scores, labels, boxes = self.postprocessors(results, image_sizes)
-        region_props = self.prepare_region_proposals(boxes, scores, labels, hs)
+        results = self.postprocessors(results, image_sizes)
+        region_props = self.prepare_region_proposals(results, hs)
 
         logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
-            features, image_sizes, region_props
+            features[-1].tensors, image_sizes, region_props
         )
         boxes = [r['boxes'] for r in region_props]
 
@@ -255,7 +255,7 @@ def build_detector(args, class_corr):
         print(f"Load pre-trained model from {args.pretrained}")
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
     predictor = torch.nn.Linear(args.hidden_dim * 2, args.num_classes)
-    interaction_head = InteractionHead(predictor, args.hidden_dim, class_corr)
+    interaction_head = InteractionHead(predictor, args.hidden_dim, detr.backbone[0].num_channels, class_corr)
     detector = GenericHOIDetector(
         detr, criterion, postprocessors['bbox'], interaction_head,
         box_score_thresh=args.box_score_thresh,
