@@ -36,6 +36,8 @@ def main(rank, args):
     np.random.seed(seed)
     random.seed(seed)
 
+    torch.cuda.set_device(rank)
+
     trainset = DataFactory(name=args.dataset, partition=args.partitions[0], data_root=args.data_root)
     testset = DataFactory(name=args.dataset, partition=args.partitions[1], data_root=args.data_root)
 
@@ -112,7 +114,7 @@ def main(rank, args):
     # Override optimiser and learning rate scheduler
     engine.update_state_key(optimizer=optim, lr_scheduler=lr_scheduler)
 
-    engine(args.num_epochs)
+    engine(args.epochs)
 
 @torch.no_grad()
 def sanity_check(args):
