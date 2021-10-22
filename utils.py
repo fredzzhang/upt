@@ -141,7 +141,7 @@ class CustomisedDLE(DistributedLearningEngine):
 
     @torch.no_grad()
     def test_hico(self, dataloader):
-        net = self._state.net()
+        net = self._state.net
         net.eval()
 
         dataset = dataloader.dataset.dataset
@@ -166,7 +166,7 @@ class CustomisedDLE(DistributedLearningEngine):
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
-            objects = output['objects']
+            objects = output['objects'][output['index']]
             scores = output['scores']
             verbs = output['labels']
             interactions = torch.tensor([
