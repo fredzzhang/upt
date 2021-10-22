@@ -85,7 +85,7 @@ def main(rank, args):
         cache_dir=args.output_dir
     )
 
-    if args.eval():
+    if args.eval:
         ap = engine.test_hico(test_loader)
         print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
 
