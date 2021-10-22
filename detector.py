@@ -217,7 +217,6 @@ class GenericHOIDetector(nn.Module):
         image_sizes = torch.as_tensor([
             im.size()[-2:] for im in images
         ], device=images[0].device)
-        object_targets = self.generate_object_targets(targets)
 
         if isinstance(images, (list, torch.Tensor)):
             images = nested_tensor_from_tensor_list(images)
@@ -235,6 +234,7 @@ class GenericHOIDetector(nn.Module):
             results['aux_outputs'] = self.detector._set_aux_loss(outputs_class, outputs_coord)
 
         if self.training:
+            object_targets = self.generate_object_targets(targets)
             detection_loss = self.compute_detection_loss(results, object_targets)
 
         results = self.postprocessors(results, image_sizes)
