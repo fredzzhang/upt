@@ -192,7 +192,7 @@ class GenericHOIDetector(nn.Module):
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
                 boxes=bx, pairing=torch.stack([h[x], o[x]]),
-                scores=scores * pr[x, y], labels=y,
+                scores=scores * pr[x, y], index=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
 
