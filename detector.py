@@ -77,7 +77,8 @@ class GenericHOIDetector(nn.Module):
             ])
             # Remove overlapping ground truth boxes
             keep = batched_nms(
-                box_ops.box_cxcywh_to_xyxy(boxes), torch.ones(len(boxes)),
+                box_ops.box_cxcywh_to_xyxy(boxes),
+                torch.ones(len(boxes), device=boxes.device),
                 labels, iou_threshold=nms_thresh
             )
             boxes = boxes[keep]
