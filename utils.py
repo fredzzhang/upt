@@ -106,8 +106,9 @@ class DataFactory(Dataset):
         return image, target
 
 class CustomisedDLE(DistributedLearningEngine):
-    def __init__(self, net, dataloader, num_classes=117, **kwargs):
+    def __init__(self, net, dataloader, max_norm=0, num_classes=117, **kwargs):
         super().__init__(net, None, dataloader, **kwargs)
+        self.max_norm = max_norm
         self.num_classes = num_classes
 
     def _on_start(self):
@@ -124,6 +125,8 @@ class CustomisedDLE(DistributedLearningEngine):
         self._state.loss = sum(loss for loss in loss_dict.values())
         self._state.optimizer.zero_grad(set_to_none=True)
         self._state.loss.backward()
+        if self.max_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self._state.net.parameters(), self.max_norm)
         self._state.optimizer.step()
 
         self.detection_loss.append(loss_dict['detection_loss'])
