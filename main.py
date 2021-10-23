@@ -82,6 +82,7 @@ def main(rank, args):
     engine = CustomisedDLE(
         detector,
         train_loader,
+        max_norm=args.clip_max_norm,
         num_classes=args.num_classes,
         print_interval=args.print_interval,
         cache_dir=args.output_dir
