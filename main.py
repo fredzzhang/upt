@@ -91,6 +91,7 @@ def main(rank, args):
     if args.eval:
         ap = engine.test_hico(test_loader)
         print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
+        sys.exit()
 
     # Seperate backbone parameters from the rest
     param_dicts = [
