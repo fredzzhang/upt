@@ -143,33 +143,33 @@ class GenericHOIDetector(nn.Module):
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
             keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
-            if self.training:
-                is_human = lb == self.human_idx
-                hum = torch.nonzero(is_human).squeeze(1)
-                obj = torch.nonzero(is_human == 0).squeeze(1)
-                n_human = is_human[keep].sum(); n_object = len(keep) - n_human
-                # Keep the number of human and object instances in a specified interval
-                if n_human < self.min_h_instances:
-                    keep_h = sc[hum].argsort(descending=True)[:self.min_h_instances]
-                    keep_h = hum[keep_h]
-                elif n_human > self.max_h_instances:
-                    keep_h = sc[hum].argsort(descending=True)[:self.max_h_instances]
-                    keep_h = hum[keep_h]
-                else:
-                    keep_h = torch.nonzero(is_human[keep]).squeeze(1)
-                    keep_h = keep[keep_h]
+            
+            is_human = lb == self.human_idx
+            hum = torch.nonzero(is_human).squeeze(1)
+            obj = torch.nonzero(is_human == 0).squeeze(1)
+            n_human = is_human[keep].sum(); n_object = len(keep) - n_human
+            # Keep the number of human and object instances in a specified interval
+            if n_human < self.min_h_instances:
+                keep_h = sc[hum].argsort(descending=True)[:self.min_h_instances]
+                keep_h = hum[keep_h]
+            elif n_human > self.max_h_instances:
+                keep_h = sc[hum].argsort(descending=True)[:self.max_h_instances]
+                keep_h = hum[keep_h]
+            else:
+                keep_h = torch.nonzero(is_human[keep]).squeeze(1)
+                keep_h = keep[keep_h]
 
-                if n_object < self.min_o_instances:
-                    keep_o = sc[obj].argsort(descending=True)[:self.min_o_instances]
-                    keep_o = obj[keep_o]
-                elif n_object > self.max_o_instances:
-                    keep_o = sc[obj].argsort(descending=True)[:self.max_o_instances]
-                    keep_o = obj[keep_o]
-                else:
-                    keep_o = torch.nonzero(is_human[keep] == 0).squeeze(1)
-                    keep_o = keep[keep_o]
+            if n_object < self.min_o_instances:
+                keep_o = sc[obj].argsort(descending=True)[:self.min_o_instances]
+                keep_o = obj[keep_o]
+            elif n_object > self.max_o_instances:
+                keep_o = sc[obj].argsort(descending=True)[:self.max_o_instances]
+                keep_o = obj[keep_o]
+            else:
+                keep_o = torch.nonzero(is_human[keep] == 0).squeeze(1)
+                keep_o = keep[keep_o]
 
-                keep = torch.cat([keep_h, keep_o])
+            keep = torch.cat([keep_h, keep_o])
 
             region_props.append(dict(
                 boxes=bx[keep],
