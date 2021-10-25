@@ -143,7 +143,7 @@ class GenericHOIDetector(nn.Module):
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
             keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
-            
+
             is_human = lb == self.human_idx
             hum = torch.nonzero(is_human).squeeze(1)
             obj = torch.nonzero(is_human == 0).squeeze(1)
@@ -264,7 +264,8 @@ def build_detector(args, class_corr):
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
     predictor = torch.nn.Linear(args.hidden_dim * 2, args.num_classes)
     interaction_head = InteractionHead(
-        predictor, args.hidden_dim, detr.backbone[0].num_channels,
+        predictor, args.hidden_dim, args.repr_dim,
+        detr.backbone[0].num_channels,
         args.num_classes, args.human_idx, class_corr
     )
     detector = GenericHOIDetector(
