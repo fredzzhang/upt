@@ -265,7 +265,7 @@ class InteractionHead(Module):
 
         self.unary_layer = UnaryLayer(
             hidden_size=hidden_state_size,
-            represetntation_size=represetntation_size,
+            representation_size=represetntation_size,
             return_weights=True
         )
         # self.weighting_layer = WeightingLayer(
