@@ -66,32 +66,36 @@ class MultiBranchFusion(Module):
 
 class UnaryLayer(Module):
     def __init__(self,
-        hidden_size: int = 1024,
+        hidden_size: int = 256,
+        representation_size: int = 512,
         num_heads: int = 8,
         return_weights: bool = False,
     ):
         super().__init__()
-        if hidden_size % num_heads != 0:
+        if representation_size % num_heads != 0:
             raise ValueError(
-                f"The given hidden size {hidden_size} should be divisible by "
-                f"the number of attention heads {num_heads}."
+                f"The given representation size {representation_size} "
+                f"should be divisible by the number of attention heads {num_heads}."
             )
-        self.sub_hidden_size = int(hidden_size / num_heads)
+        self.sub_repr_size = int(representation_size / num_heads)
+
         self.hidden_size = hidden_size
+        self.representation_size = representation_size
+
         self.num_heads = num_heads
         self.return_weights = return_weights
 
-        self.unary = nn.Linear(hidden_size, hidden_size)
-        self.pairwise = nn.Linear(hidden_size, hidden_size)
-        self.attn = nn.ModuleList([nn.Linear(3 * self.sub_hidden_size, 1) for _ in range(num_heads)])
-        self.message = nn.ModuleList([nn.Linear(self.sub_hidden_size, self.sub_hidden_size) for _ in range(num_heads)])
-        self.aggregate = nn.Linear(hidden_size, hidden_size)
+        self.unary = nn.Linear(hidden_size, representation_size)
+        self.pairwise = nn.Linear(representation_size, representation_size)
+        self.attn = nn.ModuleList([nn.Linear(3 * self.sub_repr_size, 1) for _ in range(num_heads)])
+        self.message = nn.ModuleList([nn.Linear(self.sub_repr_size, self.sub_repr_size) for _ in range(num_heads)])
+        self.aggregate = nn.Linear(representation_size, hidden_size)
         self.norm = nn.LayerNorm(hidden_size)
 
     def reshape(self, x: Tensor) -> Tensor:
         new_x_shape = x.size()[:-1] + (
             self.num_heads,
-            self.sub_hidden_size
+            self.sub_repr_size
         )
         x = x.view(*new_x_shape)
         if len(new_x_shape) == 3:
@@ -234,6 +238,7 @@ class InteractionHead(Module):
     def __init__(self,
         box_pair_predictor: Module,
         hidden_state_size: int,
+        represetntation_size: int,
         num_channels: int,
         num_classes: int,
         human_idx: int,
@@ -254,34 +259,35 @@ class InteractionHead(Module):
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, hidden_state_size),
+            nn.Linear(256, represetntation_size),
             nn.ReLU(),
         )
 
         self.unary_layer = UnaryLayer(
             hidden_size=hidden_state_size,
+            represetntation_size=represetntation_size,
             return_weights=True
         )
         # self.weighting_layer = WeightingLayer(
         #     hidden_size=hidden_state_size
         # )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
-            hidden_size=hidden_state_size * 2,
+            hidden_size=represetntation_size * 2,
             return_weights=True
         )
 
         # Spatial attention head
         self.attention_head = MultiBranchFusion(
             hidden_state_size * 2,
-            hidden_state_size, hidden_state_size,
+            represetntation_size, represetntation_size,
             cardinality=16
         )
 
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
         # Attention head for global features
         self.attention_head_g = MultiBranchFusion(
-            num_channels, hidden_state_size,
-            hidden_state_size, cardinality=16
+            num_channels, represetntation_size,
+            represetntation_size, cardinality=16
         )
 
     def compute_prior_scores(self,
