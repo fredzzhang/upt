@@ -146,10 +146,11 @@ if __name__ == '__main__':
     parser.add_argument('--dilation', action='store_true')
     parser.add_argument('--position-embedding', default='sine', type=str, choices=('sine', 'learned'))
 
+    parser.add_argument('--repr-dim', default=512, type=int)
+    parser.add_argument('--hidden-dim', default=256, type=int)
     parser.add_argument('--enc-layers', default=6, type=int)
     parser.add_argument('--dec-layers', default=6, type=int)
     parser.add_argument('--dim-feedforward', default=2048, type=int)
-    parser.add_argument('--hidden-dim', default=256, type=int)
     parser.add_argument('--dropout', default=0.1, type=float)
     parser.add_argument('--nheads', default=8, type=int)
     parser.add_argument('--num-queries', default=100, type=int)
