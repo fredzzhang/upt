@@ -249,6 +249,8 @@ class InteractionHead(Module):
         self.box_pair_predictor = box_pair_predictor
 
         self.hidden_state_size = hidden_state_size
+        self.representation_size = represetntation_size
+
         self.num_classes = num_classes
         self.human_idx = human_idx
         self.object_class_to_target_class = object_class_to_target_class
@@ -394,7 +396,7 @@ class InteractionHead(Module):
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
                 pairwise_features_collated.append(torch.zeros(
-                    0, 2 * self.hidden_state_size,
+                    0, 2 * self.representation_size,
                     device=device)
                 )
                 boxes_h_collated.append(torch.zeros(0, 4, device=device))
