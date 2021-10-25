@@ -262,7 +262,7 @@ def build_detector(args, class_corr):
     if os.path.exists(args.pretrained):
         print(f"Load pre-trained model from {args.pretrained}")
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
-    predictor = torch.nn.Linear(args.hidden_dim * 2, args.num_classes)
+    predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
     interaction_head = InteractionHead(
         predictor, args.hidden_dim, args.repr_dim,
         detr.backbone[0].num_channels,
