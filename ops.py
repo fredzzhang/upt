@@ -12,6 +12,116 @@ import torchvision.ops.boxes as box_ops
 
 from torch import Tensor
 from typing import List, Tuple
+from scipy.optimize import linear_sum_assignment
+
+import sys
+sys.path.append('detr')
+from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
+
+class HungarianMatcher(torch.nn.Module):
+
+    def __init__(self,
+        cost_object: float = 1., cost_verb: float = 1.,
+        cost_bbox: float = 1., cost_giou: float = 1.
+    ) -> None:
+        """
+        Parameters:
+        ----------
+        cost_object: float
+            Weight on the object classification term
+        cost_verb: float
+            Weight on the verb classification term
+        cost_bbox:
+            Weight on the L1 regression error
+        cost_giou:
+            Weight on the GIoU term
+        """
+        super().__init__()
+        self.cost_object = cost_object
+        self.cost_verb = cost_verb
+        self.cost_bbox = cost_bbox
+        self.cost_giou = cost_giou
+        assert cost_object + cost_verb + cost_bbox + cost_giou, \
+            "At least one cost coefficient should be non zero."
+
+    @torch.no_grad()
+    def forward(self,
+        boxes: List[Tensor], bh: List[Tensor], bo: List[Tensor], objects: List[Tensor],
+        prior: List[Tensor], logits: Tensor, targets: List[dict]
+    ) -> List[Tensor]:
+        """
+        Parameters:
+        ----------
+        boxes: List[Tensor]
+            (N, 4) Detected objects
+        bh: List[Tensor]
+            (M,) Indices for human boxes
+        bo: List[Tensor]
+            (M,) Indices for object boxes
+        objects: List[Tensor]
+            (M,) Object class indices in each pair 
+        prior: List[Tensor]
+            (2, M, K) Object detection scores for the human and object boxes in each pair
+        logits: Tensor
+            (M_, K) Classification logits for all boxes pairs
+        targets: List[dict]
+            Targets for each image with the following keys, `boxes_h` (G, 4), `boxes_o` (G, 4),
+            `labels` (G, 117), `objects` (G,)
+
+        Returns:
+        --------
+        List[Tensor]
+            A list of tuples for matched indices between detected pairs and ground truth pairs.
+
+        """
+        eps = 1e-6
+
+        # The number of box pairs in each image
+        n = [len(p) for p in bh]
+
+        bx_h = [b[h] for b, h in zip(boxes, bh)]
+        bx_o = [b[o] for b, o in zip(boxes, bo)]
+        gt_bx_h = [t['boxes_h'] for t in targets]
+        gt_bx_o = [t['boxes_o'] for t in targets]
+
+        scores = [
+            torch.sigmoid(lg) * p.prod(0)
+            for lg, p in zip(logits.split(n), prior)
+        ]
+        gt_labels = [t['labels'] for t in targets]
+
+        cost_verb = [
+            (s.matmul(l.T) / (l.sum(dim=1, keepdim=True) + eps) +
+            (1-s).matmul(1 - l.T) / (torch.sum(1 - l, dim=1, keepdim=True) + eps)) / 2
+            for s, l in zip(scores, gt_labels)
+        ]
+
+        cost_bbox = [torch.max(
+            torch.cdist(h, gt_h, p=1), torch.cdist(o, gt_o, p=1)
+        ) for h, o, gt_h, gt_o in zip(bx_h, bx_o, gt_bx_h, gt_bx_o)]
+
+        cost_giou = [torch.max(
+            -generalized_box_iou(box_cxcywh_to_xyxy(h), box_cxcywh_to_xyxy(gt_h)),
+            -generalized_box_iou(box_cxcywh_to_xyxy(o), box_cxcywh_to_xyxy(gt_o))
+        ) for h, o, gt_h, gt_o in zip(bx_h, bx_o, gt_bx_h, gt_bx_o)]
+
+        cost_object = [
+            -torch.log(                                 # Log barrier
+                obj.unsqueeze(1).eq(t['objects'])       # Binary mask
+                * p[0].max(-1)[0].unsqueeze(1)          # Object classification score
+            ) for obj, p, t in zip(objects, prior, targets)
+        ]
+
+        # Final cost matrix
+        C = [
+            c_v * self.cost_verb + c_b * self.cost_bbox +
+            c_g * self.cost_giou + c_o * self.cost_object
+            for c_v, c_b, c_g, c_o in zip(cost_verb, cost_bbox, cost_giou, cost_object)
+        ]
+
+        indices = [linear_sum_assignment(c.cpu()) for c in C]
+        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
+
 
 def compute_spatial_encodings(
     boxes_1: List[Tensor], boxes_2: List[Tensor],
@@ -20,19 +130,19 @@ def compute_spatial_encodings(
     """
     Parameters:
     -----------
-        boxes_1: List[Tensor]
-            First set of bounding boxes (M, 4)
-        boxes_1: List[Tensor]
-            Second set of bounding boxes (M, 4)
-        shapes: List[Tuple[int, int]]
-            Image shapes, heights followed by widths
-        eps: float
-            A small constant used for numerical stability
+    boxes_1: List[Tensor]
+        First set of bounding boxes (M, 4)
+    boxes_1: List[Tensor]
+        Second set of bounding boxes (M, 4)
+    shapes: List[Tuple[int, int]]
+        Image shapes, heights followed by widths
+    eps: float
+        A small constant used for numerical stability
 
     Returns:
     --------
-        Tensor
-            Computed spatial encodings between the boxes (N, 36)
+    Tensor
+        Computed spatial encodings between the boxes (N, 36)
     """
     features = []
     for b1, b2, shape in zip(boxes_1, boxes_2, shapes):
@@ -89,23 +199,23 @@ def binary_focal_loss_with_logits(
 
     Parameters:
     -----------
-        x: Tensor[N, K]
-            Post-normalisation scores
-        y: Tensor[N, K]
-            Binary labels
-        alpha: float
-            Hyper-parameter that balances between postive and negative examples
-        gamma: float
-            Hyper-paramter suppresses well-classified examples
-        reduction: str
-            Reduction methods
-        eps: float
-            A small constant to avoid NaN values from 'PowBackward'
+    x: Tensor[N, K]
+        Post-normalisation scores
+    y: Tensor[N, K]
+        Binary labels
+    alpha: float
+        Hyper-parameter that balances between postive and negative examples
+    gamma: float
+        Hyper-paramter suppresses well-classified examples
+    reduction: str
+        Reduction methods
+    eps: float
+        A small constant to avoid NaN values from 'PowBackward'
 
     Returns:
     --------
-        loss: Tensor
-            Computed loss tensor
+    loss: Tensor
+        Computed loss tensor
     """
     loss = (1 - y - alpha).abs() * ((y-torch.sigmoid(x)).abs() + eps) ** gamma * \
         torch.nn.functional.binary_cross_entropy_with_logits(
