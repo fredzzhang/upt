@@ -138,11 +138,12 @@ class GenericHOIDetector(nn.Module):
     #     return loss / n_p
 
     def prepare_region_proposals(self, results, hidden_states):
+        logits, boxes = results['pred_logits'], results['pred_boxes']
+        prob = torch.softmax(logits, -1)
+        scores, labels = prob[..., :-1].max(-1)
+
         region_props = []
-        for res, hs in zip(results, hidden_states):
-            logits, bx = res['pred_logits'], res['pred_boxes']
-            prob = torch.softmax(logits, -1)
-            sc, lb = prob[..., :-1].max(-1)
+        for bx, sc, lb, hs in zip(boxes, scores, labels, hidden_states):
 
             # Perform NMS
             keep = batched_nms(bx, sc, lb, 0.5)
