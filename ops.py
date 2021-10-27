@@ -129,7 +129,6 @@ class SetCriterion(nn.Module):
             cost_bbox=args.set_cost_bbox,
             cost_giou=args.set_cost_giou
         )
-        super().__init__()
 
     def interaction_loss(self,
         bx_h: List[Tensor], bx_o: List[Tensor], indices: List[Tensor],
