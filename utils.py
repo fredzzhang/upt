@@ -20,9 +20,10 @@ import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, BoxPairAssociation
 
+from ops import box_cxcywh_to_xyxy
+
 import sys
 sys.path.append('detr')
-from util import box_ops
 import datasets.transforms as T
 
 def custom_collate(batch):
@@ -178,7 +179,7 @@ class CustomisedDLE(DistributedLearningEngine):
             ])
             # Recover target box scale
             gt_boxes = target['boxes']
-            gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
+            gt_boxes = box_cxcywh_to_xyxy(gt_boxes)
             h, w = target['size']
             scale_fct = torch.stack([w, h, w, h])
             gt_boxes *= scale_fct
