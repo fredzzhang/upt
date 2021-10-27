@@ -124,6 +124,11 @@ def sanity_check(args):
     args.human_idx = 0; args.num_classes = 117
     object_to_target = dataset.dataset.object_to_verb
     detector = build_detector(args, object_to_target)
+    if os.path.exists(args.resume):
+        print(f"Continue from saved checkpoint {args.resume}")
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        checkpoint['model_state_dict'].pop('criterion.empty_weight')
+        detector.load_state_dict(checkpoint['model_state_dict'])
     if args.eval:
         detector.eval()
 
@@ -158,6 +163,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--no-aux-loss', dest='aux_loss', action='store_false')
     parser.add_argument('--set-cost-class', default=1, type=float)
+    parser.add_argument('--set-cost-object', default=1, type=float)
+    parser.add_argument('--set-cost-verb', default=1, type=float)
     parser.add_argument('--set-cost-bbox', default=5, type=float)
     parser.add_argument('--set-cost-giou', default=2, type=float)
     parser.add_argument('--bbox-loss-coef', default=5, type=float)
