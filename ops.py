@@ -121,12 +121,13 @@ class HungarianMatcher(nn.Module):
 
 class SetCriterion(nn.Module):
     def __init__(self, args) -> None:
+        super().__init__()
         self.args = args
         self.matcher = HungarianMatcher(
-            cost_object=args.cost_object,
-            cost_verb=args.cost_verb,
-            cost_bbox=args.cost_bbox,
-            cost_giou=args.cost_giou
+            cost_object=args.set_cost_object,
+            cost_verb=args.set_cost_verb,
+            cost_bbox=args.set_cost_bbox,
+            cost_giou=args.set_cost_giou
         )
         super().__init__()
 
