@@ -166,7 +166,7 @@ class SetCriterion(nn.Module):
         loss = binary_focal_loss_with_logits(
             torch.log(
                 (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
-            ), labels, reduction='sum'
+            ), labels, reduction='sum', alpha=self.args.alpha, gamma=self.args.gamma
         )
 
         return loss / n_p
