@@ -8,9 +8,10 @@ Australian Centre for Robotic Vision
 """
 
 import torch
+import torch.distributed as dist
 import torchvision.ops.boxes as box_ops
 
-from torch import Tensor
+from torch import nn, Tensor
 from typing import List, Tuple
 from scipy.optimize import linear_sum_assignment
 
@@ -18,7 +19,7 @@ import sys
 sys.path.append('detr')
 from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
 
-class HungarianMatcher(torch.nn.Module):
+class HungarianMatcher(nn.Module):
 
     def __init__(self,
         cost_object: float = 1., cost_verb: float = 1.,
@@ -46,18 +47,16 @@ class HungarianMatcher(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self,
-        boxes: List[Tensor], bh: List[Tensor], bo: List[Tensor], objects: List[Tensor],
+        bx_h: List[Tensor], bx_o: List[Tensor], objects: List[Tensor],
         prior: List[Tensor], logits: Tensor, targets: List[dict]
     ) -> List[Tensor]:
         """
         Parameters:
         ----------
-        boxes: List[Tensor]
-            (N, 4) Detected objects
         bh: List[Tensor]
-            (M,) Indices for human boxes
+            (M, 4) Human bounding boxes in detected pairs
         bo: List[Tensor]
-            (M,) Indices for object boxes
+            (M, 4) Object bounding boxes in detected pairs
         objects: List[Tensor]
             (M,) Object class indices in each pair 
         prior: List[Tensor]
@@ -77,10 +76,8 @@ class HungarianMatcher(torch.nn.Module):
         eps = 1e-6
 
         # The number of box pairs in each image
-        n = [len(p) for p in bh]
+        n = [len(p) for p in bx_h]
 
-        bx_h = [b[h] for b, h in zip(boxes, bh)]
-        bx_o = [b[o] for b, o in zip(boxes, bo)]
         gt_bx_h = [t['boxes_h'] for t in targets]
         gt_bx_o = [t['boxes_o'] for t in targets]
 
@@ -121,6 +118,70 @@ class HungarianMatcher(torch.nn.Module):
 
         indices = [linear_sum_assignment(c.cpu()) for c in C]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
+
+class SetCriterion(nn.Module):
+    def __init__(self, args) -> None:
+        self.args = args
+        self.matcher = HungarianMatcher(
+            cost_object=args.cost_object,
+            cost_verb=args.cost_verb,
+            cost_bbox=args.cost_bbox,
+            cost_giou=args.cost_giou
+        )
+        super().__init__()
+
+    def interaction_loss(self,
+        bx_h: List[Tensor], bx_o: List[Tensor], indices: List[Tensor],
+        prior: List[Tensor], logits: Tensor, targets: List[dict]
+    ) -> Tensor:
+        collated_labels = []
+        for bh, bo, idx, tgt in zip(bx_h, bx_o, indices, targets):
+            idx_h, idx_o = idx
+
+            mask = torch.diag(torch.min(
+                box_ops.box_iou(bh[idx_h], tgt['boxes_h'][idx_o]),
+                box_ops.box_iou(bo[idx_h], tgt['boxes_o'][idx_o])
+            ) > 0.5).unsqueeze(1)
+            matched_labels = tgt['labels'][idx_o] * mask
+            labels = torch.zeros(
+                len(bh), self.args.num_classes,
+                device=matched_labels.device
+            )
+            labels[idx_h] = matched_labels
+            collated_labels.append(labels)
+
+        collated_labels = torch.cat(collated_labels)
+        prior = torch.cat(prior, dim=1).prod(0)
+        x, y = torch.nonzero(prior).unbind(1)
+        logits = logits[x, y]; prior = prior[x, y]; labels = collated_labels[x, y]
+
+        n_p = len(torch.nonzero(labels))
+        if dist.is_initialized():
+            world_size = dist.get_world_size()
+            n_p = torch.as_tensor([n_p], device='cuda')
+            dist.barrier()
+            dist.all_reduce(n_p)
+            n_p = (n_p / world_size).item()
+
+        loss = binary_focal_loss_with_logits(
+            torch.log(
+                (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
+            ), labels, reduction='sum'
+        )
+
+        return loss / n_p
+
+    def forward(self,
+        boxes: List[Tensor], bh: List[Tensor], bo: List[Tensor], objects: List[Tensor],
+        prior: List[Tensor], logits: Tensor, targets: List[dict]
+    ) -> Tensor:
+        bx_h = [b[h] for b, h in zip(boxes, bh)]
+        bx_o = [b[o] for b, o in zip(boxes, bo)]
+        indices = self.matcher(bx_h, bx_o, objects, prior, logits, targets)
+
+        return dict(
+            interaction_loss=self.interaction_loss(bx_h, bx_o, indices, prior, logits, targets)
+        )
 
 
 def compute_spatial_encodings(
