@@ -17,7 +17,7 @@ from collections import OrderedDict
 
 import pocket
 
-from ops import compute_spatial_encodings
+from ops import compute_spatial_encodings, box_cxcywh_to_xyxy
 
 class MultiBranchFusion(Module):
     """
@@ -333,7 +333,6 @@ class InteractionHead(Module):
 
     def forward(self,
         features: OrderedDict,
-        image_shapes: Tensor,
         region_props: List[dict]
     ) -> List[dict]:
         """
@@ -379,7 +378,7 @@ class InteractionHead(Module):
         attn_maps_collated = []; # pairing_weights_collated = []
 
         for b_idx, props in enumerate(region_props):
-            boxes = props['boxes']
+            boxes = box_cxcywh_to_xyxy(props['boxes'])
             scores = props['scores']
             labels = props['labels']
             unary_f = props['hidden_states']
@@ -422,7 +421,7 @@ class InteractionHead(Module):
 
             # Compute spatial features
             box_pair_spatial = compute_spatial_encodings(
-                [boxes[x]], [boxes[y]], [image_shapes[b_idx]]
+                [boxes[x]], [boxes[y]], [(1., 1.)]
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
