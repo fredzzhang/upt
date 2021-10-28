@@ -262,11 +262,11 @@ class GenericHOIDetector(nn.Module):
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
-            interaction_loss = self.criterion(boxes, bh, bo, objects, prior, logits, targets)
-            loss_dict = dict(
-                # detection_loss=detection_loss,
-                interaction_loss=interaction_loss
-            )
+            loss_dict = self.criterion(boxes, bh, bo, objects, prior, logits, targets)
+            # loss_dict = dict(
+            #     detection_loss=detection_loss,
+            #     interaction_loss=interaction_loss
+            # )
             return loss_dict
 
         detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
