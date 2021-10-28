@@ -9,16 +9,17 @@ Australian Centre for Robotic Vision
 
 import math
 import torch
+import torch.nn.functional as F
 import torch.distributed as dist
 import torchvision.ops.boxes as box_ops
 
 from torch import nn, Tensor
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from scipy.optimize import linear_sum_assignment
 
 import sys
 sys.path.append('detr')
-from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
+from util.box_ops import generalized_box_iou
 
 class BoxPairCoder:
     def __init__(self,
@@ -223,27 +224,19 @@ class SetCriterion(nn.Module):
             cost_bbox=args.set_cost_bbox,
             cost_giou=args.set_cost_giou
         )
+        self.box_pair_coder = BoxPairCoder()
 
     def interaction_loss(self,
-        bx_h: List[Tensor], bx_o: List[Tensor], indices: List[Tensor],
+        n_pairs: List[int], indices: List[Tensor],
         prior: List[Tensor], logits: Tensor, targets: List[dict]
     ) -> Tensor:
         collated_labels = []
-        for bh, bo, idx, tgt in zip(bx_h, bx_o, indices, targets):
+        for n, idx, tgt in zip(n_pairs, indices, targets):
             idx_h, idx_o = idx
 
-            mask = torch.diag(torch.min(
-                box_ops.box_iou(
-                    box_cxcywh_to_xyxy(bh[idx_h]),
-                    box_cxcywh_to_xyxy(tgt['boxes_h'][idx_o])
-                ), box_ops.box_iou(
-                    box_cxcywh_to_xyxy(bo[idx_h]),
-                    box_cxcywh_to_xyxy(tgt['boxes_o'][idx_o])
-                )
-            ) > 0.5).unsqueeze(1)
-            matched_labels = tgt['labels'][idx_o] * mask
+            matched_labels = tgt['labels'][idx_o]
             labels = torch.zeros(
-                len(bh), self.args.num_classes,
+                n, self.args.num_classes,
                 device=matched_labels.device
             )
             labels[idx_h] = matched_labels
@@ -270,17 +263,63 @@ class SetCriterion(nn.Module):
 
         return loss / n_p
 
+    def regression_loss(self,
+        props_h: List[Tensor], props_o: List[Tensor],
+        reg_h: List[Tensor], reg_o: List[Tensor], indices: List[Tensor],
+        targets: List[dict], bbox_deltas: List[Tensor],
+    ) -> Tensor:
+        props_h = torch.cat([b[i].view(-1, 4) for (i, _), b in zip(indices, props_h)])
+        props_o = torch.cat([b[i].view(-1, 4) for (i, _), b in zip(indices, props_o)])
+        reg_h = torch.cat([b[i].view(-1, 4) for (i, _), b in zip(indices, reg_h)])
+        reg_o = torch.cat([b[i].view(-1, 4) for (i, _), b in zip(indices, reg_o)])
+
+        tgt_h = torch.cat([t['boxes_h'][j].view(-1, 4) for (_, j), t in zip(indices, targets)])
+        tgt_o = torch.cat([t['boxes_o'][j].view(-1, 4) for (_, j), t in zip(indices, targets)])
+
+        bbox_deltas = torch.cat([d[i].view(-1, 8) for (i, _), d in zip(indices, bbox_deltas)])
+        reg_targets = self.box_pair_coder.encode(
+            props_h, props_o, tgt_h, tgt_o
+        )
+
+        huber_loss = F.smooth_l1_loss(
+            bbox_deltas, reg_targets,
+            beta=1 / 9, reduction='sum'
+        )
+        huber_loss = huber_loss / len(bbox_deltas)
+
+        giou_loss = 2 - torch.diag(generalized_box_iou(
+            box_cxcywh_to_xyxy(reg_h),
+            box_cxcywh_to_xyxy(tgt_h)
+        )) - torch.diag(generalized_box_iou(
+            box_cxcywh_to_xyxy(reg_o),
+            box_cxcywh_to_xyxy(tgt_o)
+        ))
+
+        giou_loss = giou_loss.sum() / len(bbox_deltas)
+
+        return dict(huber_loss=huber_loss, giou_loss=giou_loss)
+
+
     def forward(self,
         boxes: List[Tensor], bh: List[Tensor], bo: List[Tensor], objects: List[Tensor],
-        prior: List[Tensor], logits: Tensor, targets: List[dict]
-    ) -> Tensor:
+        prior: List[Tensor], logits: Tensor, bbox_deltas: Tensor, targets: List[dict]
+    ) -> Dict[str, Tensor]:
+        n = [len(b) for b in bh]
+
         bx_h = [b[h] for b, h in zip(boxes, bh)]
         bx_o = [b[o] for b, o in zip(boxes, bo)]
-        indices = self.matcher(bx_h, bx_o, objects, prior, logits, targets)
 
-        return dict(
-            interaction_loss=self.interaction_loss(bx_h, bx_o, indices, prior, logits, targets)
-        )
+        bx_h_post, bx_o_post = self.box_pair_coder.decode(torch.cat(bx_h), torch.cat(bx_o), bbox_deltas)
+        bx_h_post = bx_h_post.split(n); bx_o_post = bx_o_post.split(n)
+
+        indices = self.matcher(bx_h_post, bx_o_post, objects, prior, logits, targets)
+
+        loss_dict = {"focal_loss": self.interaction_loss(n, indices, prior, logits, targets)}
+        loss_dict.update(self.regression_loss(
+            bx_h, bx_o, bx_h_post, bx_o_post, indices, targets, bbox_deltas.split(n)
+        ))
+
+        return loss_dict
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(-1)
