@@ -33,8 +33,8 @@ class GenericHOIDetector(nn.Module):
         interaction_head: nn.Module
     """
     def __init__(self,
-        detector: nn.Module, criterion: nn.Module,
-        postprocessors: nn.Module, interaction_head: nn.Module,
+        detector: nn.Module, criterion: nn.Module, interaction_head: nn.Module,
+        verb_predictor: nn.Module, bbox_regressor: nn.Module,
         box_score_thresh: float, fg_iou_thresh: float,
         # Dataset parameters
         human_idx: int, num_classes: int,
@@ -46,9 +46,10 @@ class GenericHOIDetector(nn.Module):
         super().__init__()
         self.detector = detector
         self.criterion = criterion
-        self.postprocessors = postprocessors
 
         self.interaction_head = interaction_head
+        self.verb_predictor = verb_predictor
+        self.bbox_regressor = bbox_regressor
 
         self.box_score_thresh = box_score_thresh
         self.fg_iou_thresh = fg_iou_thresh
@@ -256,13 +257,18 @@ class GenericHOIDetector(nn.Module):
         # results = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
-        logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
+        pairwise_features, prior, bh, bo, objects, attn_maps = self.interaction_head(
             features[-1].tensors, region_props
         )
+
+        pairwise_features = torch.cat(pairwise_features)
+        logits = self.verb_predictor(pairwise_features)
+        bbox_deltas = self.bbox_regressor(pairwise_features)
+
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
-            loss_dict = self.criterion(boxes, bh, bo, objects, prior, logits, targets)
+            loss_dict = self.criterion(boxes, bh, bo, objects, prior, logits, bbox_deltas, targets)
             # loss_dict = dict(
             #     detection_loss=detection_loss,
             #     interaction_loss=interaction_loss
@@ -273,19 +279,23 @@ class GenericHOIDetector(nn.Module):
         return detections
 
 def build_detector(args, class_corr):
-    detr, _, postprocessors = build_model(args)
+    detr, _, _ = build_model(args)
     if os.path.exists(args.pretrained):
         print(f"Load pre-trained model from {args.pretrained}")
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
-    predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
+
+    verb_predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
+    bbox_regressor = torch.nn.Linear(args.repr_dim * 2, 8)
+
     interaction_head = InteractionHead(
-        predictor, args.hidden_dim, args.repr_dim,
+        args.hidden_dim, args.repr_dim,
         detr.backbone[0].num_channels,
         args.num_classes, args.human_idx, class_corr
     )
     criterion = SetCriterion(args)
     detector = GenericHOIDetector(
-        detr, criterion, postprocessors['bbox'], interaction_head,
+        detr, criterion, interaction_head,
+        verb_predictor, bbox_regressor,
         box_score_thresh=args.box_score_thresh,
         fg_iou_thresh=args.fg_iou_thresh,
         human_idx=args.human_idx, num_classes=args.num_classes,
