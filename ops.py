@@ -88,9 +88,10 @@ class HungarianMatcher(nn.Module):
         gt_labels = [t['labels'] for t in targets]
 
         cost_verb = [
-            (s.matmul(l.T) / (l.sum(dim=1, keepdim=True) + eps) +
-            (1-s).matmul(1 - l.T) / (torch.sum(1 - l, dim=1, keepdim=True) + eps)) / 2
-            for s, l in zip(scores, gt_labels)
+            -0.5 * (
+                s.matmul(l.T) / (l.sum(dim=1, keepdim=True) + eps) +
+                (1-s).matmul(1 - l.T) / (torch.sum(1 - l, dim=1, keepdim=True) + eps)
+            ) for s, l in zip(scores, gt_labels)
         ]
 
         cost_bbox = [torch.max(
@@ -104,8 +105,8 @@ class HungarianMatcher(nn.Module):
 
         cost_object = [
             -torch.log(                                 # Log barrier
-                obj.unsqueeze(1).eq(t['objects'])       # Binary mask
-                * p[0].max(-1)[0].unsqueeze(1)          # Object classification score
+                obj.unsqueeze(1).eq(t['object'])        # Binary mask
+                * p[0].max(-1)[0].unsqueeze(1) + eps    # Object classification score
             ) for obj, p, t in zip(objects, prior, targets)
         ]
 
@@ -139,8 +140,13 @@ class SetCriterion(nn.Module):
             idx_h, idx_o = idx
 
             mask = torch.diag(torch.min(
-                box_ops.box_iou(bh[idx_h], tgt['boxes_h'][idx_o]),
-                box_ops.box_iou(bo[idx_h], tgt['boxes_o'][idx_o])
+                box_ops.box_iou(
+                    box_cxcywh_to_xyxy(bh[idx_h]),
+                    box_cxcywh_to_xyxy(tgt['boxes_h'][idx_o])
+                ), box_ops.box_iou(
+                    box_cxcywh_to_xyxy(bo[idx_h]),
+                    box_cxcywh_to_xyxy(tgt['boxes_o'][idx_o])
+                )
             ) > 0.5).unsqueeze(1)
             matched_labels = tgt['labels'][idx_o] * mask
             labels = torch.zeros(
