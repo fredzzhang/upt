@@ -85,6 +85,7 @@ def main(rank, args):
         max_norm=args.clip_max_norm,
         num_classes=args.num_classes,
         print_interval=args.print_interval,
+        find_unused_parameters=True,
         cache_dir=args.output_dir
     )
 
