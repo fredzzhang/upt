@@ -236,7 +236,6 @@ class InteractionHead(Module):
         the number of positive logits will be averaged across all subprocesses
     """
     def __init__(self,
-        box_pair_predictor: Module,
         hidden_state_size: int,
         represetntation_size: int,
         num_channels: int,
@@ -245,8 +244,6 @@ class InteractionHead(Module):
         object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
-
-        self.box_pair_predictor = box_pair_predictor
 
         self.hidden_state_size = hidden_state_size
         self.representation_size = represetntation_size
@@ -454,9 +451,7 @@ class InteractionHead(Module):
             attn_maps_collated.append((unary_attn, pairwise_attn))
             # pairing_weights_collated.append(pairing_weights)
 
-        pairwise_features_collated = torch.cat(pairwise_features_collated)
-        logits = self.box_pair_predictor(pairwise_features_collated)
         # pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
 
-        return logits, prior_collated, \
+        return pairwise_features_collated, prior_collated, \
             boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
