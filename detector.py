@@ -195,11 +195,11 @@ class GenericHOIDetector(nn.Module):
         logits = logits.split(n)
 
         detections = []
-        for bx, h, o, lg, pr, obj, attn, size in zip(
+        for bx, idx_h, idx_o, lg, pr, obj, attn, size in zip(
             boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes
         ):
             bx = box_cxcywh_to_xyxy(bx)
-            w, h = size
+            h, w = size
             scale_fct = torch.stack([w, h, w, h]).view(1, 4)
             bx *=scale_fct
 
@@ -207,7 +207,7 @@ class GenericHOIDetector(nn.Module):
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([h[x], o[x]]),
+                boxes=bx, pairing=torch.stack([idx_h[x], idx_o[x]]),
                 scores=scores * pr[x, y], index=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
