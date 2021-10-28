@@ -89,8 +89,8 @@ class HungarianMatcher(nn.Module):
 
         cost_verb = [
             -0.5 * (
-                s.matmul(l.T) / (l.sum(dim=1, keepdim=True) + eps) +
-                (1-s).matmul(1 - l.T) / (torch.sum(1 - l, dim=1, keepdim=True) + eps)
+                s.matmul(l.T) / (l.sum(dim=1).unsqueeze(0) + eps) +
+                (1-s).matmul(1 - l.T) / (torch.sum(1 - l, dim=1).unsqueeze(0) + eps)
             ) for s, l in zip(scores, gt_labels)
         ]
 
