@@ -7,17 +7,110 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
+import math
 import torch
 import torch.distributed as dist
 import torchvision.ops.boxes as box_ops
 
 from torch import nn, Tensor
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from scipy.optimize import linear_sum_assignment
 
 import sys
 sys.path.append('detr')
 from util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou
+
+class BoxPairCoder:
+    def __init__(self,
+        weights: Optional[List[float]] = None,
+        bbox_xform_clip: float = math.log(1000. / 16)
+    ) -> None:
+        if weights is None:
+            weights = [10., 10., 5., 5.]
+        self.weights = weights
+        self.bbox_xform_clip = bbox_xform_clip
+
+    def encode(self, props_h: Tensor, props_o: Tensor, target_h: Tensor, target_o: Tensor) -> Tensor:
+        """
+        Compute the regression targets based on proposed boxes pair and target box pairs.
+        NOTE that all boxes are presumed to have been normalised by image width and height
+        and are in (c_x, c_y, w, h) format.
+
+        Parameters:
+        -----------
+        props_h: Tensor
+            (N, 4) Human box proposals
+        props_o: Tensor
+            (N, 4) Object box proposals
+        target_h: Tensor
+            (N, 4) Human box targets
+        target_o: Tensor
+            (N, 4) Object box targets
+
+        Returns:
+        --------
+        box_deltas: Tensor
+            (N, 8) Regression targets for proposed box pairs
+        """
+        wx, wy, ww, wh = self.weights
+        dx_h = wx * (target_h[:, 0] - props_h[:, 0])
+        dy_h = wy * (target_h[:, 1] - props_h[:, 1])
+        dw_h = ww * torch.log(target_h[:, 2] / props_h[:, 2])
+        dh_h = wh * torch.log(target_h[:, 3] / props_h[:, 3])
+
+        dx_o = wx * (target_o[:, 0] - props_o[:, 0])
+        dy_o = wy * (target_o[:, 1] - props_o[:, 1])
+        dw_o = ww * torch.log(target_o[:, 2] / props_o[:, 2])
+        dh_o = wh * torch.log(target_o[:, 3] / props_o[:, 3])
+
+        box_deltas = torch.stack([dx_h, dy_h, dw_h, dh_h, dx_o, dy_o, dw_o, dh_o], dim=1)
+
+        return box_deltas
+
+    def decode(self, props_h: Tensor, props_o: Tensor, box_deltas: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        Recover the regressed box pairs based on the proposed pairs and the box deltas.
+        NOTE that the proposed box pairs are presumed to have been normalised by image
+        width and height and are in (c_x, c_y, w, h) format.
+
+        Parameters:
+        -----------
+        props_h: Tensor
+            (N, 4) Human box proposals
+        props_o: Tensor
+            (N, 4) Object box proposals
+        box_deltas: Tensor
+            (N, 8) Predicted regression values for proposed box pairs
+
+        Returns:
+        --------
+        regressed_h: Tensor
+            (N, 4) Regressed human boxes
+        regressed_o: Tensor
+            (N, 4) Regressed object boxes
+        """
+        weights = torch.as_tensor(self.weights).repeat(2).to(box_deltas)
+        box_deltas = box_deltas / weights
+
+        dx_h, dy_h, dw_h, dh_h, dx_o, dy_o, dw_o, dh_o = box_deltas.unbind(1)
+
+        # # Prevent sending too large values into torch.exp()
+        dw_h = torch.clamp(dw_h, max=self.bbox_xform_clip)
+        dh_h = torch.clamp(dh_h, max=self.bbox_xform_clip)
+        dw_o = torch.clamp(dw_o, max=self.bbox_xform_clip)
+        dh_o = torch.clamp(dh_o, max=self.bbox_xform_clip)
+
+        regressed_h = torch.stack([
+            props_h[:, 0] + dx_h, props_h[:, 1] + dy_h,
+            props_h[:, 2] * torch.exp(dw_h), props_h[:, 3] * torch.exp(dh_h)
+        ], dim=1)
+
+        regressed_o = torch.stack([
+            props_o[:, 0] + dx_o, props_o[:, 1] + dy_o,
+            props_o[:, 2] * torch.exp(dw_o), props_o[:, 3] * torch.exp(dh_o)
+        ], dim=1)
+
+        return regressed_h, regressed_o
 
 class HungarianMatcher(nn.Module):
 
