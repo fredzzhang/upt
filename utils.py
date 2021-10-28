@@ -9,8 +9,9 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
-from tqdm import tqdm
+import torchvision.ops.boxes as box_ops
 
+from tqdm import tqdm
 from torch.utils.data import Dataset
 
 from vcoco.vcoco import VCOCO
@@ -88,19 +89,33 @@ class DataFactory(Dataset):
     def __getitem__(self, i):
         image, target = self.dataset[i]
         if self.name == 'hicodet':
-            target['labels'] = target['verb']
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
             target['boxes_h'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
+            # Generate binary labels
+            labels = torch.zeros(len(target['boxes_h']), 117)
+            match = torch.min(
+                box_ops.box_iou(target['boxes_h'], target['boxes_h']),
+                box_ops.box_iou(target['boxes_o'], target['boxes_o'])
+            ) >= 0.5
+            x, y = torch.nonzero(
+                match * target['object'].eq(target['object'].unsqueeze(1))
+            ).unbind(1)
+            labels[x, target['verb'][y]] = 1
+            # Remove duplicated pairs
+            keep = pocket.ops.batched_pnms(
+                target['boxes_h'], target['boxes_o'],
+                torch.ones(target['object'].size()),
+                target['object'], .5
+            )
+            target['boxes_h'] = target['boxes_h'][keep]
+            target['boxes_o'] = target['boxes_o'][keep]
+            target['object'] = target['object'][keep]
+            target['labels'] = labels[keep]
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
-        bh = target.pop('boxes_h'); bo = target.pop('boxes_o')
-        # Interlace human boxes with object boxes
-        target['boxes'] = torch.cat([
-            torch.stack([h, o]) for h, o in zip(bh, bo)
-        ])
 
         image, target = self.transforms(image, target)
 
