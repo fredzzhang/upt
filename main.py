@@ -93,6 +93,8 @@ def main(rank, args):
         print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
         return
 
+    for p in detector.detector.parameters():
+        p.requires_grad = False
     # Seperate backbone parameters from the rest
     param_dicts = [
         {
