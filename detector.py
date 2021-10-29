@@ -9,14 +9,13 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
-import torch.distributed as dist
 
 
 from torch import nn, Tensor
 from typing import Optional, List
 from torchvision.ops.boxes import batched_nms
 
-from ops import SetCriterion, box_cxcywh_to_xyxy
+from ops import SetCriterion, BoxPairCoder, box_cxcywh_to_xyxy
 from interaction_head import InteractionHead
 
 import sys
@@ -64,6 +63,8 @@ class GenericHOIDetector(nn.Module):
         self.max_h_instances = max_h_instances
         self.min_o_instances = min_o_instances
         self.max_o_instances = max_o_instances
+
+        self.box_pair_coder = BoxPairCoder()
 
     def prepare_region_proposals(self, results, hidden_states):
         logits, boxes = results['pred_logits'], results['pred_boxes']
@@ -117,26 +118,40 @@ class GenericHOIDetector(nn.Module):
 
         return region_props
 
+    def recover_boxes(self, boxes, image_size):
+        h, w = image_size
+        boxes = box_cxcywh_to_xyxy(boxes)
+        scale_fct = torch.stack([w, h, w, h]).view(1, 4)
+        return boxes * scale_fct
+
     @torch.no_grad()
-    def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes):
-        n = [len(b) for b in bh]
+    def postprocessing(self,
+        boxes, idx_h, idx_o, bbox_deltas,
+        logits, prior, objects, attn_maps, image_sizes
+    ):
+        n = [len(i) for i in idx_h]
         logits = logits.split(n)
+        bbox_deltas = bbox_deltas.split(n)
 
         detections = []
-        for bx, idx_h, idx_o, lg, pr, obj, attn, size in zip(
-            boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes
+        for bx, ih, io, delta, lg, pr, obj, attn, size in zip(
+            boxes, idx_h, idx_o, bbox_deltas, logits, prior, objects, attn_maps, image_sizes
         ):
-            bx = box_cxcywh_to_xyxy(bx)
-            h, w = size
-            scale_fct = torch.stack([w, h, w, h]).view(1, 4)
-            bx *=scale_fct
+            # Recover the unary boxes before regression
+            bx = self.recover_boxes(bx, size)
+
+            # Recover the regressed box pairs
+            bx_h_post, bx_o_post = self.box_pair_coder(bx[idx_h], bx[idx_o], delta)
+            bx_h_post = self.recover_boxes(bx_h_post, size)
+            bx_o_post = self.recover_boxes(bx_o_post, size)
 
             pr = pr.prod(0)
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([idx_h[x], idx_o[x]]),
-                scores=scores * pr[x, y], index=x, labels=y,
+                boxes=bx, pairing=torch.stack([idx_h, idx_o]),
+                boxes_h=bx_h_post, boxes_o=bx_o_post,
+                scores=scores * pr[x, y], repeat=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
 
@@ -184,7 +199,7 @@ class GenericHOIDetector(nn.Module):
         # results = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
-        pairwise_features, prior, bh, bo, objects, attn_maps = self.interaction_head(
+        pairwise_features, prior, idx_h, idx_o, objects, attn_maps = self.interaction_head(
             features[-1].tensors, region_props
         )
 
@@ -195,14 +210,14 @@ class GenericHOIDetector(nn.Module):
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
-            loss_dict = self.criterion(boxes, bh, bo, objects, prior, logits, bbox_deltas, targets)
+            loss_dict = self.criterion(boxes, idx_h, idx_o, objects, prior, logits, bbox_deltas, targets)
             # loss_dict = dict(
             #     detection_loss=detection_loss,
             #     interaction_loss=interaction_loss
             # )
             return loss_dict
 
-        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
+        detections = self.postprocessing(boxes, idx_h, idx_o, bbox_deltas, logits, prior, objects, attn_maps, image_sizes)
         return detections
 
 def build_detector(args, class_corr):
