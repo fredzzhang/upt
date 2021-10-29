@@ -77,14 +77,7 @@ class DataFactory(Dataset):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
                 T.ColorJitter(.4, .4, .4),
-                T.RandomSelect(
-                    T.RandomResize(scales, max_size=1333),
-                    T.Compose([
-                        T.RandomResize([400, 500, 600]),
-                        T.RandomSizeCrop(384, 600),
-                        T.RandomResize(scales, max_size=1333),
-                    ])
-                ),
+                T.RandomResize(scales, max_size=1333),
                 normalize,
             ])
         else:
