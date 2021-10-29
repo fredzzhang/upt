@@ -11,6 +11,7 @@ import os
 import sys
 import torch
 import random
+import warnings
 import argparse
 import torchvision
 import numpy as np
@@ -20,6 +21,8 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 from detector import build_detector
 from utils import custom_collate, CustomisedDLE, DataFactory
+
+warnings.filterwarnings("ignore")
 
 def main(rank, args):
 
