@@ -21,6 +21,45 @@ import sys
 sys.path.append('detr')
 from util.box_ops import generalized_box_iou
 
+class BalancedBoxSampler:
+    def __init__(self, threshold: float = .2, perc: float = .4) -> None:
+        self.threshold = threshold
+        self.perc = perc
+
+    def __call__(self, scores: Tensor, number: int) -> Tensor:
+        """
+        Parameters:
+        -----------
+        scores: Tensor
+            (N,) The confidence scores for a set of bounding boxes
+        number: int
+            The number of boxes to sample
+
+        Returns:
+        --------
+        sampled_high: Tensor
+            Indices of sampled high-confidence examples
+        sampled_low: Tensor
+            Indices of sampled low-confidence examples
+        """
+        idx_high = torch.nonzero(scores >= self.threshold).squeeze(1)
+        idx_low = torch.nonzero(scores < self.threshold).squeeze(1)
+
+        n_high = int(number * self.perc)
+        # Protect against not enough high-confidence examples
+        n_high = min(idx_high.numel(), n_high)
+        n_low = number - n_high
+        # Protect against not enough low-confidence examples
+        n_low = min(idx_low.numel(), n_low)
+
+        perm_high = torch.randperm(idx_high.numel(), device=idx_high.device)[:n_high]
+        perm_low = torch.randperm(idx_low.numel(), device=idx_low.device)[:n_low]
+
+        sampled_high = idx_high[perm_high]
+        sampled_low = idx_low[perm_low]
+
+        return sampled_high, sampled_low
+
 class BoxPairCoder:
     def __init__(self,
         weights: Optional[List[float]] = None,
