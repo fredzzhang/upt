@@ -15,7 +15,10 @@ from torch import nn, Tensor
 from typing import Optional, List
 from torchvision.ops.boxes import batched_nms
 
-from ops import SetCriterion, BoxPairCoder, box_cxcywh_to_xyxy
+from ops import (
+    SetCriterion, BoxPairCoder, BalancedBoxSampler,
+    box_cxcywh_to_xyxy
+)
 from interaction_head import InteractionHead
 
 import sys
@@ -34,13 +37,12 @@ class GenericHOIDetector(nn.Module):
     def __init__(self,
         detector: nn.Module, criterion: nn.Module, interaction_head: nn.Module,
         verb_predictor: nn.Module, bbox_regressor: nn.Module,
-        box_score_thresh: float, fg_iou_thresh: float,
         # Dataset parameters
         human_idx: int, num_classes: int,
         # Training parameters
-        alpha: float = 0.5, gamma: float = 2.0,
-        min_h_instances: int = 3, max_h_instances: int = 15,
-        min_o_instances: int = 3, max_o_instances: int = 15
+        alpha: float = .5, gamma: float = 2.,
+        box_score_thresh: float = .2, high_conf_perc: float = .8,
+        n_h_instances: int = 10, n_o_instances: int = 15,
     ) -> None:
         super().__init__()
         self.detector = detector
@@ -50,8 +52,10 @@ class GenericHOIDetector(nn.Module):
         self.verb_predictor = verb_predictor
         self.bbox_regressor = bbox_regressor
 
-        self.box_score_thresh = box_score_thresh
-        self.fg_iou_thresh = fg_iou_thresh
+        self.sampler = BalancedBoxSampler(
+            threshold=box_score_thresh,
+            perc=high_conf_perc
+        )
 
         self.human_idx = human_idx
         self.num_classes = num_classes
@@ -59,10 +63,8 @@ class GenericHOIDetector(nn.Module):
         self.alpha = alpha
         self.gamma = gamma
 
-        self.min_h_instances = min_h_instances
-        self.max_h_instances = max_h_instances
-        self.min_o_instances = min_o_instances
-        self.max_o_instances = max_o_instances
+        self.n_h_instances = n_h_instances
+        self.n_o_instances = n_o_instances
 
         self.box_pair_coder = BoxPairCoder()
 
@@ -79,36 +81,15 @@ class GenericHOIDetector(nn.Module):
             sc = sc[keep].view(-1)
             lb = lb[keep].view(-1)
             bx = bx[keep].view(-1, 4)
-            # Filter out low scoring boxes
-            keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
 
-            is_human = lb == self.human_idx
-            hum = torch.nonzero(is_human).squeeze(1)
-            obj = torch.nonzero(is_human == 0).squeeze(1)
-            n_human = is_human[keep].sum(); n_object = len(keep) - n_human
-            # Keep the number of human and object instances in a specified interval
-            if n_human < self.min_h_instances:
-                keep_h = sc[hum].argsort(descending=True)[:self.min_h_instances]
-                keep_h = hum[keep_h]
-            elif n_human > self.max_h_instances:
-                keep_h = sc[hum].argsort(descending=True)[:self.max_h_instances]
-                keep_h = hum[keep_h]
-            else:
-                keep_h = torch.nonzero(is_human[keep]).squeeze(1)
-                keep_h = keep[keep_h]
+            h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
+            o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
 
-            if n_object < self.min_o_instances:
-                keep_o = sc[obj].argsort(descending=True)[:self.min_o_instances]
-                keep_o = obj[keep_o]
-            elif n_object > self.max_o_instances:
-                keep_o = sc[obj].argsort(descending=True)[:self.max_o_instances]
-                keep_o = obj[keep_o]
-            else:
-                keep_o = torch.nonzero(is_human[keep] == 0).squeeze(1)
-                keep_o = keep[keep_o]
+            # Sample a fixed number of human and object boxes
+            keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
+            keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
 
-            keep = torch.cat([keep_h, keep_o])
-
+            keep = torch.cat([h_idx[keep_h], o_idx[keep_o]])
             region_props.append(dict(
                 boxes=bx[keep],
                 scores=sc[keep],
@@ -238,13 +219,11 @@ def build_detector(args, class_corr):
     detector = GenericHOIDetector(
         detr, criterion, interaction_head,
         verb_predictor, bbox_regressor,
-        box_score_thresh=args.box_score_thresh,
-        fg_iou_thresh=args.fg_iou_thresh,
         human_idx=args.human_idx, num_classes=args.num_classes,
         alpha=args.alpha, gamma=args.gamma,
-        min_h_instances=args.min_h,
-        max_h_instances=args.max_h,
-        min_o_instances=args.min_o,
-        max_o_instances=args.max_o
+        box_score_thresh=args.box_score_thresh,
+        high_conf_perc=args.high_conf_perc,
+        n_h_instances=args.num_humans,
+        n_o_instances=args.num_objects
     )
     return detector
