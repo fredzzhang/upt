@@ -194,8 +194,8 @@ class CustomisedDLE(DistributedLearningEngine):
             output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
             target = batch[-1][0]
             # Format detections
-            boxes_h = output['boxes_h'][output['repeat']]
-            boxes_o = output['boxes_o'][output['repeat']]
+            boxes = output['boxes']
+            boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
             objects = output['objects'][output['repeat']]
             scores = output['scores']
             verbs = output['labels']
