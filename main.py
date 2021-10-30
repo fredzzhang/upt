@@ -138,7 +138,7 @@ def sanity_check(args):
     if args.eval:
         detector.eval()
 
-    image, target = dataset[0]
+    image, target = dataset[396]
     outputs = detector([image], [target])
 
 if __name__ == '__main__':
@@ -199,11 +199,9 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
-    parser.add_argument('--min-h', default=3, type=int)
-    parser.add_argument('--min-o', default=3, type=int)
-    parser.add_argument('--max-h', default=15, type=int)
-    parser.add_argument('--max-o', default=15, type=int)
+    parser.add_argument('--high-conf-perc', default=0.6, type=float)
+    parser.add_argument('--number-humans', default=10, type=int)
+    parser.add_argument('--number-objects', default=15, type=int)
 
     args = parser.parse_args()
     print(args)
