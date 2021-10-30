@@ -85,11 +85,15 @@ class GenericHOIDetector(nn.Module):
             h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
             o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
 
-            # Sample a fixed number of human and object boxes
-            keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
-            keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
-
+            if self.training:
+                # Sample a fixed number of human and object boxes
+                keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
+                keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
+            else:
+                keep_h = torch.argsort(sc[h_idx], descending=True)[:self.n_h_instances]
+                keep_o = torch.argsort(sc[o_idx], descending=True)[:self.n_o_instances]
             keep = torch.cat([h_idx[keep_h], o_idx[keep_o]])
+
             region_props.append(dict(
                 boxes=bx[keep],
                 scores=sc[keep],
@@ -130,7 +134,7 @@ class GenericHOIDetector(nn.Module):
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([ih[x], io[y]]),
+                boxes=bx, pairing=torch.stack([ih[x], io[x]]),
                 # boxes_h=bx_h_post, boxes_o=bx_o_post,
                 scores=scores * pr[x, y], repeat=x, labels=y,
                 objects=obj, attn_maps=attn
