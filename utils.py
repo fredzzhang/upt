@@ -136,8 +136,8 @@ class CustomisedDLE(DistributedLearningEngine):
 
     def _on_start(self):
         self.focal_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.huber_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.giou_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        # self.huber_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        # self.giou_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         loss_dict = self._state.net(
@@ -151,23 +151,23 @@ class CustomisedDLE(DistributedLearningEngine):
         self._state.optimizer.step()
 
         self.focal_loss.append(loss_dict['focal_loss'])
-        self.huber_loss.append(loss_dict['huber_loss'])
-        self.giou_loss.append(loss_dict['giou_loss'])
+        # self.huber_loss.append(loss_dict['huber_loss'])
+        # self.giou_loss.append(loss_dict['giou_loss'])
 
     def _print_statistics(self):
         super()._print_statistics()
         focal_loss = self.focal_loss.mean()
-        huber_loss = self.huber_loss.mean()
-        giou_loss = self.giou_loss.mean()
+        # huber_loss = self.huber_loss.mean()
+        # giou_loss = self.giou_loss.mean()
         if self._rank == 0:
             print(
                 f"focal loss: {focal_loss:.4f}"
-                f", huber loss: {huber_loss:.4f}"
-                f", giou loss: {giou_loss:.4f}"
+                # f", huber loss: {huber_loss:.4f}"
+                # f", giou loss: {giou_loss:.4f}"
             )
         self.focal_loss.reset()
-        self.huber_loss.reset()
-        self.giou_loss.reset()
+        # self.huber_loss.reset()
+        # self.giou_loss.reset()
 
     @torch.no_grad()
     def test_hico(self, dataloader):
