@@ -22,7 +22,7 @@ sys.path.append('detr')
 from util.box_ops import generalized_box_iou
 
 class BalancedBoxSampler:
-    def __init__(self, threshold: float = .2, perc: float = .4) -> None:
+    def __init__(self, threshold: float = .2, perc: float = .8) -> None:
         self.threshold = threshold
         self.perc = perc
 
