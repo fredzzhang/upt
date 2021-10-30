@@ -265,17 +265,26 @@ class SetCriterion(nn.Module):
         )
         self.box_pair_coder = BoxPairCoder()
 
-    def interaction_loss(self,
-        n_pairs: List[int], indices: List[Tensor],
+    def focal_loss(self,
+        bx_h: List[Tensor], bx_o: List[Tensor], indices: List[Tensor],
         prior: List[Tensor], logits: Tensor, targets: List[dict]
     ) -> Tensor:
         collated_labels = []
-        for n, idx, tgt in zip(n_pairs, indices, targets):
+        for bh, bo, idx, tgt in zip(bx_h, bx_o, indices, targets):
             idx_h, idx_o = idx
 
-            matched_labels = tgt['labels'][idx_o]
+            mask = torch.diag(torch.min(
+                box_ops.box_iou(
+                    box_cxcywh_to_xyxy(bh[idx_h]),
+                    box_cxcywh_to_xyxy(tgt['boxes_h'][idx_o])
+                ), box_ops.box_iou(
+                    box_cxcywh_to_xyxy(bo[idx_h]),
+                    box_cxcywh_to_xyxy(tgt['boxes_o'][idx_o])
+                )
+            ) > 0.5).unsqueeze(1)
+            matched_labels = tgt['labels'][idx_o] * mask
             labels = torch.zeros(
-                n, self.args.num_classes,
+                len(bh), self.args.num_classes,
                 device=matched_labels.device
             )
             labels[idx_h] = matched_labels
@@ -343,20 +352,20 @@ class SetCriterion(nn.Module):
         boxes: List[Tensor], bh: List[Tensor], bo: List[Tensor], objects: List[Tensor],
         prior: List[Tensor], logits: Tensor, bbox_deltas: Tensor, targets: List[dict]
     ) -> Dict[str, Tensor]:
-        n = [len(b) for b in bh]
+        # n = [len(b) for b in bh]
 
         bx_h = [b[h] for b, h in zip(boxes, bh)]
         bx_o = [b[o] for b, o in zip(boxes, bo)]
 
-        bx_h_post, bx_o_post = self.box_pair_coder.decode(torch.cat(bx_h), torch.cat(bx_o), bbox_deltas)
-        bx_h_post = bx_h_post.split(n); bx_o_post = bx_o_post.split(n)
+        # bx_h_post, bx_o_post = self.box_pair_coder.decode(torch.cat(bx_h), torch.cat(bx_o), bbox_deltas)
+        # bx_h_post = bx_h_post.split(n); bx_o_post = bx_o_post.split(n)
 
-        indices = self.matcher(bx_h_post, bx_o_post, objects, prior, logits, targets)
+        indices = self.matcher(bx_h, bx_o, objects, prior, logits, targets)
 
-        loss_dict = {"focal_loss": self.interaction_loss(n, indices, prior, logits, targets)}
-        loss_dict.update(self.regression_loss(
-            bx_h, bx_o, bx_h_post, bx_o_post, indices, targets, bbox_deltas.split(n)
-        ))
+        loss_dict = {"focal_loss": self.focal_loss(bx_h, bx_o, indices, prior, logits, targets)}
+        # loss_dict.update(self.regression_loss(
+        #     bx_h, bx_o, bx_h_post, bx_o_post, indices, targets, bbox_deltas.split(n)
+        # ))
 
         return loss_dict
 
