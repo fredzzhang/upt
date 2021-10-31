@@ -142,6 +142,13 @@ class GenericHOIDetector(nn.Module):
         region_props = []
         for res, hs in zip(results, hidden_states):
             sc, lb, bx = res.values()
+
+            keep = batched_nms(bx, sc, lb, 0.5)
+            sc = sc[keep].view(-1)
+            lb = lb[keep].view(-1)
+            bx = bx[keep].view(-1, 4)
+            hs = hs[keep].view(-1, 256)
+
             keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
 
             is_human = lb == self.human_idx
