@@ -399,8 +399,8 @@ class InteractionHead(Module):
                     0, 2 * self.representation_size,
                     device=device)
                 )
-                boxes_h_collated.append(torch.zeros(0, 4, device=device))
-                boxes_o_collated.append(torch.zeros(0, 4, device=device))
+                boxes_h_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
+                boxes_o_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
                 # pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
