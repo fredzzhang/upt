@@ -241,9 +241,9 @@ class GenericHOIDetector(nn.Module):
         if self.detector.aux_loss:
             results['aux_outputs'] = self.detector._set_aux_loss(outputs_class, outputs_coord)
 
-        if self.training:
-            object_targets = self.generate_object_targets(targets)
-            detection_loss = self.compute_detection_loss(results, object_targets)
+#        if self.training:
+#            object_targets = self.generate_object_targets(targets)
+#            detection_loss = self.compute_detection_loss(results, object_targets)
 
         results = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
@@ -256,7 +256,7 @@ class GenericHOIDetector(nn.Module):
         if self.training:
             interaction_loss = self.compute_interaction_loss(boxes, bh, bo, logits, prior, targets)
             loss_dict = dict(
-                detection_loss=detection_loss,
+#                detection_loss=detection_loss,
                 interaction_loss=interaction_loss
             )
             return loss_dict
