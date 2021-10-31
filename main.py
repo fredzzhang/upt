@@ -88,6 +88,7 @@ def main(rank, args):
         max_norm=args.clip_max_norm,
         num_classes=args.num_classes,
         print_interval=args.print_interval,
+        find_unused_parameters=True,
         cache_dir=args.output_dir
     )
 
@@ -96,6 +97,8 @@ def main(rank, args):
         print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
         return
 
+    for p in detector.detector.parameters():
+        p.requires_grad = False
     # Seperate backbone parameters from the rest
     param_dicts = [
         {
