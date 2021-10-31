@@ -9,6 +9,8 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
+import numpy as np
+
 from tqdm import tqdm
 
 from torch.utils.data import Dataset
@@ -149,6 +151,9 @@ class CustomisedDLE(DistributedLearningEngine):
 
         dataset = dataloader.dataset.dataset
         associate = BoxPairAssociation(min_iou=0.5)
+        conversion = torch.from_numpy(np.asarray(
+            dataset.object_n_verb_to_interaction, dtype=float
+        ))
 
         meter = DetectionAPMeter(
             600, nproc=1,
@@ -172,10 +177,7 @@ class CustomisedDLE(DistributedLearningEngine):
             objects = output['objects'][output['index']]
             scores = output['scores']
             verbs = output['labels']
-            interactions = torch.tensor([
-                dataset.object_n_verb_to_interaction[o][v]
-                for o, v in zip(objects, verbs)
-            ])
+            interactions = conversion[objects, verbs]
             # Recover target box scale
             gt_boxes = target['boxes']
             gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
