@@ -131,12 +131,11 @@ class GenericHOIDetector(nn.Module):
             # bx_o_post = self.recover_boxes(bx_o_post, size)
 
             pr = pr.prod(0)
-            x, y = torch.nonzero(pr).unbind(1)
-            scores = torch.sigmoid(lg[x, y])
+            scores = torch.sigmoid(lg)
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([ih[x], io[x]]),
+                boxes=bx, pairing=torch.stack([ih, io]),
                 # boxes_h=bx_h_post, boxes_o=bx_o_post,
-                scores=scores * pr[x, y], repeat=x, labels=y,
+                scores=scores * pr,
                 objects=obj, attn_maps=attn
             ))
 
