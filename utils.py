@@ -196,33 +196,45 @@ class CustomisedDLE(DistributedLearningEngine):
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
-            objects = output['objects'][output['repeat']]
+            objects = output['objects']
             scores = output['scores']
-            verbs = output['labels']
-            interactions = torch.tensor([
+            x, y = torch.nonzero(scores).unbind(1)
+            interactions = torch.as_tensor([
                 dataset.object_n_verb_to_interaction[o][v]
-                for o, v in zip(objects, verbs)
+                for o, v in zip(objects[x], y)
             ])
+            labels = torch.zeros_like(x).float()
             # Recover target box scale
             gt_bxh = target['boxes_h']; gt_bxh = box_cxcywh_to_xyxy(gt_bxh)
             gt_bxo = target['boxes_o']; gt_bxo = box_cxcywh_to_xyxy(gt_bxo)
             h, w = target['size']
             scale_fct = torch.stack([w, h, w, h])
             gt_bxh *= scale_fct; gt_bxo *= scale_fct
+
+            # Mask out connections with inconsistent object type
+            mask = target['object'].unsqueeze(1).eq(objects)
             # Associate detected pairs with ground truth pairs
-            labels = torch.zeros_like(scores)
-            unique_hoi = interactions.unique()
-            for hoi_idx in unique_hoi:
-                gt_idx = torch.nonzero(target['hoi'] == hoi_idx).squeeze(1)
-                det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
-                if len(gt_idx):
-                    labels[det_idx] = associate(
-                        (gt_bxh[gt_idx].view(-1, 4),
-                        gt_bxo[gt_idx].view(-1, 4)),
-                        (boxes_h[det_idx].view(-1, 4),
-                        boxes_o[det_idx].view(-1, 4)),
-                        scores[det_idx].view(-1)
-                    )
+            piou = torch.min(
+                box_ops.box_iou(gt_bxh, boxes_h),
+                box_ops.box_iou(gt_bxo, boxes_o)
+            ) * mask
+            # Assign detections to ground truth with highest IoU by zeroing out the rest
+            match = torch.zeros_like(piou)
+            max_iou, max_idx = piou.max(dim=0)
+            match[max_idx, list(range(len(boxes_h)))] = max_iou
+            match = match >= 0.5
+
+            # Determine the true positives
+            for i, m in enumerate(match):
+                p = torch.nonzero(m).squeeze(1)
+                # Skip the ground truth pairs without matched positives
+                if len(p) == 0:
+                    continue
+                verb_idx = dataset.class_corr[target['hoi'][i]][2]
+                p_scores = scores[p, verb_idx]
+                tp = p[torch.argmax(p_scores)]
+                tp_mask = torch.logical_and(x == tp, y == verb_idx)
+                labels[tp_mask] = 1
 
             meter.append(scores, interactions, labels)
 
