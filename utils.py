@@ -72,6 +72,7 @@ class DataFactory(Dataset):
         if partition.startswith('train'):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
+                T.ColorJitter(.4, .4, .4),
                 T.RandomResize(scales, max_size=1333),
                 normalize,
             ])
@@ -115,7 +116,7 @@ class CustomisedDLE(DistributedLearningEngine):
 
     def _on_start(self):
         self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-        self.detection_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+#        self.detection_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
         self.interaction_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
@@ -131,17 +132,19 @@ class CustomisedDLE(DistributedLearningEngine):
             torch.nn.utils.clip_grad_norm_(self._state.net.parameters(), self.max_norm)
         self._state.optimizer.step()
 
-        self.detection_loss.append(loss_dict['detection_loss'])
+#        self.detection_loss.append(loss_dict['detection_loss'])
         self.interaction_loss.append(loss_dict['interaction_loss'])
 
     def _print_statistics(self):
         super()._print_statistics()
-        detection_loss = self.detection_loss.mean()
+#        detection_loss = self.detection_loss.mean()
         interaction_loss = self.interaction_loss.mean()
         if self._rank == 0:
-            print(f"=> Detection loss: {detection_loss:.4f},",
-            f"interaction loss: {interaction_loss:.4f}")
-        self.detection_loss.reset()
+            print(
+#                f"=> Detection loss: {detection_loss:.4f},",
+                f"interaction loss: {interaction_loss:.4f}"
+            )
+#        self.detection_loss.reset()
         self.interaction_loss.reset()
 
     @torch.no_grad()
