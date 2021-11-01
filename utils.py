@@ -73,9 +73,15 @@ class DataFactory(Dataset):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
                 T.ColorJitter(.4, .4, .4),
-                T.RandomResize(scales, max_size=1333),
-                normalize,
-            ])
+                T.RandomSelect(
+                    T.RandomResize(scales, max_size=1333),
+                    T.Compose([
+                        T.RandomResize([400, 500, 600]),
+                        T.RandomSizeCrop(384, 600),
+                        T.RandomResize(scales, max_size=1333),
+                    ])
+                ), normalize,
+        ])
         else:
             self.transforms = T.Compose([
                 T.RandomResize([800], max_size=1333),
@@ -98,11 +104,6 @@ class DataFactory(Dataset):
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
-        bh = target.pop('boxes_h'); bo = target.pop('boxes_o')
-        # Interlace human boxes with object boxes
-        target['boxes'] = torch.cat([
-            torch.stack([h, o]) for h, o in zip(bh, bo)
-        ])
 
         image, target = self.transforms(image, target)
 

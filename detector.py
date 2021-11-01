@@ -88,19 +88,23 @@ class GenericHOIDetector(nn.Module):
             ))
         return object_targets
 
+    def recover_boxes(self, boxes, size):
+        boxes = box_ops.box_cxcywh_to_xyxy(boxes)
+        h, w = size
+        scale_fct = torch.stack([w, h, w, h])
+        boxes = boxes * scale_fct
+        return boxes
+
     def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
         n = boxes_h.shape[0]
         labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
 
-        gt_boxes = targets['boxes']
-        gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
-        h, w = targets['size']
-        scale_fct = torch.stack([w, h, w, h])
-        gt_boxes *= scale_fct
+        gt_bx_h = self.recover_boxes(targets['boxes_h'], targets['size'])
+        gt_bx_o = self.recover_boxes(targets['boxes_o'], targets['size'])
 
         x, y = torch.nonzero(torch.min(
-            box_iou(boxes_h, gt_boxes[0::2]),
-            box_iou(boxes_o, gt_boxes[1::2])
+            box_iou(boxes_h, gt_bx_h),
+            box_iou(boxes_o, gt_bx_o)
         ) >= self.fg_iou_thresh).unbind(1)
 
         labels[x, targets['labels'][y]] = 1
