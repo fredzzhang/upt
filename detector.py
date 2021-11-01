@@ -81,6 +81,8 @@ class GenericHOIDetector(nn.Module):
             sc = sc[keep].view(-1)
             lb = lb[keep].view(-1)
             bx = bx[keep].view(-1, 4)
+            # TODO Maybe take this dimension from an argument
+            hs = hs[keep].view(-1, 256)
 
             h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
             o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
