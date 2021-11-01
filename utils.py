@@ -183,11 +183,9 @@ class CustomisedDLE(DistributedLearningEngine):
             verbs = output['labels']
             interactions = conversion[objects, verbs]
             # Recover target box scale
-            gt_boxes = target['boxes']
-            gt_boxes = box_ops.box_cxcywh_to_xyxy(gt_boxes)
-            h, w = target['size']
-            scale_fct = torch.stack([w, h, w, h])
-            gt_boxes *= scale_fct
+            gt_bx_h = net.recover_boxes(target['boxes_h'], target['size'])
+            gt_bx_o = net.recover_boxes(target['boxes_o'], target['size'])
+
             # Associate detected pairs with ground truth pairs
             labels = torch.zeros_like(scores)
             unique_hoi = interactions.unique()
@@ -196,8 +194,8 @@ class CustomisedDLE(DistributedLearningEngine):
                 det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
                 if len(gt_idx):
                     labels[det_idx] = associate(
-                        (gt_boxes[0::2][gt_idx].view(-1, 4),
-                        gt_boxes[1::2][gt_idx].view(-1, 4)),
+                        (gt_bx_h[gt_idx].view(-1, 4),
+                        gt_bx_o[gt_idx].view(-1, 4)),
                         (boxes_h[det_idx].view(-1, 4),
                         boxes_o[det_idx].view(-1, 4)),
                         scores[det_idx].view(-1)
