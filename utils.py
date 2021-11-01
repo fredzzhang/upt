@@ -9,6 +9,7 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
+import numpy as np
 import torchvision.ops.boxes as box_ops
 
 from tqdm import tqdm
@@ -136,8 +137,8 @@ class CustomisedDLE(DistributedLearningEngine):
 
     def _on_start(self):
         self.focal_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.huber_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.giou_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        # self.huber_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        # self.giou_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         loss_dict = self._state.net(
@@ -151,23 +152,23 @@ class CustomisedDLE(DistributedLearningEngine):
         self._state.optimizer.step()
 
         self.focal_loss.append(loss_dict['focal_loss'])
-        self.huber_loss.append(loss_dict['huber_loss'])
-        self.giou_loss.append(loss_dict['giou_loss'])
+        # self.huber_loss.append(loss_dict['huber_loss'])
+        # self.giou_loss.append(loss_dict['giou_loss'])
 
     def _print_statistics(self):
         super()._print_statistics()
         focal_loss = self.focal_loss.mean()
-        huber_loss = self.huber_loss.mean()
-        giou_loss = self.giou_loss.mean()
+        # huber_loss = self.huber_loss.mean()
+        # giou_loss = self.giou_loss.mean()
         if self._rank == 0:
             print(
                 f"focal loss: {focal_loss:.4f}"
-                f", huber loss: {huber_loss:.4f}"
-                f", giou loss: {giou_loss:.4f}"
+                # f", huber loss: {huber_loss:.4f}"
+                # f", giou loss: {giou_loss:.4f}"
             )
         self.focal_loss.reset()
-        self.huber_loss.reset()
-        self.giou_loss.reset()
+        # self.huber_loss.reset()
+        # self.giou_loss.reset()
 
     @torch.no_grad()
     def test_hico(self, dataloader):
@@ -176,6 +177,9 @@ class CustomisedDLE(DistributedLearningEngine):
 
         dataset = dataloader.dataset.dataset
         associate = BoxPairAssociation(min_iou=0.5)
+        conversion = torch.from_numpy(np.asarray(
+            dataset.object_n_verb_to_interaction, dtype=float
+        ))
 
         meter = DetectionAPMeter(
             600, nproc=1,
@@ -194,15 +198,12 @@ class CustomisedDLE(DistributedLearningEngine):
             output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
             target = batch[-1][0]
             # Format detections
-            boxes_h = output['boxes_h'][output['repeat']]
-            boxes_o = output['boxes_o'][output['repeat']]
+            boxes = output['boxes']
+            boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
             objects = output['objects'][output['repeat']]
             scores = output['scores']
             verbs = output['labels']
-            interactions = torch.tensor([
-                dataset.object_n_verb_to_interaction[o][v]
-                for o, v in zip(objects, verbs)
-            ])
+            interactions = conversion[objects, verbs]
             # Recover target box scale
             gt_bxh = target['boxes_h']; gt_bxh = box_cxcywh_to_xyxy(gt_bxh)
             gt_bxo = target['boxes_o']; gt_bxo = box_cxcywh_to_xyxy(gt_bxo)

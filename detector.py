@@ -85,11 +85,15 @@ class GenericHOIDetector(nn.Module):
             h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
             o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
 
-            # Sample a fixed number of human and object boxes
-            keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
-            keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
-
+            if self.training:
+                # Sample a fixed number of human and object boxes
+                keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
+                keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
+            else:
+                keep_h = torch.argsort(sc[h_idx], descending=True)[:self.n_h_instances]
+                keep_o = torch.argsort(sc[o_idx], descending=True)[:self.n_o_instances]
             keep = torch.cat([h_idx[keep_h], o_idx[keep_o]])
+
             region_props.append(dict(
                 boxes=bx[keep],
                 scores=sc[keep],
@@ -112,26 +116,26 @@ class GenericHOIDetector(nn.Module):
     ):
         n = [len(i) for i in idx_h]
         logits = logits.split(n)
-        bbox_deltas = bbox_deltas.split(n)
+        # bbox_deltas = bbox_deltas.split(n)
 
         detections = []
-        for bx, ih, io, delta, lg, pr, obj, attn, size in zip(
-            boxes, idx_h, idx_o, bbox_deltas, logits, prior, objects, attn_maps, image_sizes
+        for bx, ih, io, lg, pr, obj, attn, size in zip(
+            boxes, idx_h, idx_o, logits, prior, objects, attn_maps, image_sizes
         ):
             # Recover the unary boxes before regression
             bx = self.recover_boxes(bx, size)
 
             # Recover the regressed box pairs
-            bx_h_post, bx_o_post = self.box_pair_coder.decode(bx[idx_h], bx[idx_o], delta)
-            bx_h_post = self.recover_boxes(bx_h_post, size)
-            bx_o_post = self.recover_boxes(bx_o_post, size)
+            # bx_h_post, bx_o_post = self.box_pair_coder.decode(bx[idx_h], bx[idx_o], delta)
+            # bx_h_post = self.recover_boxes(bx_h_post, size)
+            # bx_o_post = self.recover_boxes(bx_o_post, size)
 
             pr = pr.prod(0)
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([ih, io]),
-                boxes_h=bx_h_post, boxes_o=bx_o_post,
+                boxes=bx, pairing=torch.stack([ih[x], io[x]]),
+                # boxes_h=bx_h_post, boxes_o=bx_o_post,
                 scores=scores * pr[x, y], repeat=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
@@ -186,19 +190,19 @@ class GenericHOIDetector(nn.Module):
 
         pairwise_features = torch.cat(pairwise_features)
         logits = self.verb_predictor(pairwise_features)
-        bbox_deltas = self.bbox_regressor(pairwise_features)
+        # bbox_deltas = self.bbox_regressor(pairwise_features)
 
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
-            loss_dict = self.criterion(boxes, idx_h, idx_o, objects, prior, logits, bbox_deltas, targets)
+            loss_dict = self.criterion(boxes, idx_h, idx_o, objects, prior, logits, None, targets)
             # loss_dict = dict(
             #     detection_loss=detection_loss,
             #     interaction_loss=interaction_loss
             # )
             return loss_dict
 
-        detections = self.postprocessing(boxes, idx_h, idx_o, bbox_deltas, logits, prior, objects, attn_maps, image_sizes)
+        detections = self.postprocessing(boxes, idx_h, idx_o, None, logits, prior, objects, attn_maps, image_sizes)
         return detections
 
 def build_detector(args, class_corr):
@@ -208,7 +212,7 @@ def build_detector(args, class_corr):
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
 
     verb_predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
-    bbox_regressor = torch.nn.Linear(args.repr_dim * 2, 8)
+    # bbox_regressor = torch.nn.Linear(args.repr_dim * 2, 8)
 
     interaction_head = InteractionHead(
         args.hidden_dim, args.repr_dim,
@@ -218,7 +222,7 @@ def build_detector(args, class_corr):
     criterion = SetCriterion(args)
     detector = GenericHOIDetector(
         detr, criterion, interaction_head,
-        verb_predictor, bbox_regressor,
+        verb_predictor, None,
         human_idx=args.human_idx, num_classes=args.num_classes,
         alpha=args.alpha, gamma=args.gamma,
         box_score_thresh=args.box_score_thresh,
