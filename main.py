@@ -14,6 +14,7 @@ import random
 import warnings
 import argparse
 import numpy as np
+from torch._C import Value
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
@@ -88,6 +89,8 @@ def main(rank, args):
     )
 
     if args.eval:
+        if args.dataset == 'vcoco':
+            raise NotImplementedError(f"Evaluation on V-COCO has not been implemented.")
         ap = engine.test_hico(test_loader)
         # Fetch indices for rare and non-rare classes
         num_anno = torch.as_tensor(trainset.dataset.anno_interaction)
@@ -95,8 +98,8 @@ def main(rank, args):
         non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
         print(
             f"The mAP is {ap.mean():.4f},"
-            f"rare: {ap[rare].mean():.4f},"
-            f"none-rare: {ap[non_rare].mean():.4f}"
+            f" rare: {ap[rare].mean():.4f},"
+            f" none-rare: {ap[non_rare].mean():.4f}"
         )
         return
 
