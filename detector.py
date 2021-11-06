@@ -223,8 +223,8 @@ def build_detector(args, class_corr):
     )
     criterion = SetCriterion(args)
     detector = GenericHOIDetector(
-        detr, criterion, interaction_head,
-        verb_predictor, None,
+        detr, criterion,
+        interaction_head, verb_predictor,
         human_idx=args.human_idx, num_classes=args.num_classes,
         alpha=args.alpha, gamma=args.gamma,
         box_score_thresh=args.box_score_thresh,
