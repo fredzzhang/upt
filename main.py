@@ -171,7 +171,7 @@ if __name__ == '__main__':
                         help="Relative classification weight of the no-object class")
 
     parser.add_argument('--alpha', default=0.5, type=float)
-    parser.add_argument('--gamma', default=2.0, type=float)
+    parser.add_argument('--gamma', default=0.2, type=float)
 
     parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
