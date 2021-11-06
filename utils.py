@@ -105,6 +105,7 @@ class DataFactory(Dataset):
             # representation from pixel indices to coordinates
             target['boxes_h'][:, :2] -= 1
             target['boxes_o'][:, :2] -= 1
+            target['labels'] = target['verb']
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
