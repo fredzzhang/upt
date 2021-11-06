@@ -9,53 +9,49 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
+import torch.distributed as dist
 
 
 from torch import nn, Tensor
 from typing import Optional, List
-from torchvision.ops.boxes import batched_nms
+from torchvision.ops.boxes import batched_nms, box_iou
 
-from ops import (
-    SetCriterion, BoxPairCoder, BalancedBoxSampler,
-    box_cxcywh_to_xyxy
-)
+from ops import binary_focal_loss_with_logits
 from interaction_head import InteractionHead
 
 import sys
 sys.path.append('detr')
 from models import build_model
+from util import box_ops
 from util.misc import nested_tensor_from_tensor_list
 
 class GenericHOIDetector(nn.Module):
     """A generic architecture for HOI detector
-
     Parameters:
     -----------
         detector: nn.Module
         interaction_head: nn.Module
     """
     def __init__(self,
-        detector: nn.Module, criterion: nn.Module, interaction_head: nn.Module,
-        verb_predictor: nn.Module, bbox_regressor: nn.Module,
+        detector: nn.Module, criterion: nn.Module,
+        postprocessors: nn.Module, interaction_head: nn.Module,
+        box_score_thresh: float, fg_iou_thresh: float,
         # Dataset parameters
         human_idx: int, num_classes: int,
         # Training parameters
-        alpha: float = .5, gamma: float = 2.,
-        box_score_thresh: float = .2, high_conf_perc: float = .8,
-        n_h_instances: int = 10, n_o_instances: int = 15,
+        alpha: float = 0.5, gamma: float = 2.0,
+        min_h_instances: int = 3, max_h_instances: int = 15,
+        min_o_instances: int = 3, max_o_instances: int = 15
     ) -> None:
         super().__init__()
         self.detector = detector
         self.criterion = criterion
+        self.postprocessors = postprocessors
 
         self.interaction_head = interaction_head
-        self.verb_predictor = verb_predictor
-        self.bbox_regressor = bbox_regressor
 
-        self.sampler = BalancedBoxSampler(
-            threshold=box_score_thresh,
-            perc=high_conf_perc
-        )
+        self.box_score_thresh = box_score_thresh
+        self.fg_iou_thresh = fg_iou_thresh
 
         self.human_idx = human_idx
         self.num_classes = num_classes
@@ -63,38 +59,128 @@ class GenericHOIDetector(nn.Module):
         self.alpha = alpha
         self.gamma = gamma
 
-        self.n_h_instances = n_h_instances
-        self.n_o_instances = n_o_instances
+        self.min_h_instances = min_h_instances
+        self.max_h_instances = max_h_instances
+        self.min_o_instances = min_o_instances
+        self.max_o_instances = max_o_instances
 
-        self.box_pair_coder = BoxPairCoder()
+    def generate_object_targets(self, targets, nms_thresh=0.7):
+        object_targets = []
+        for target in targets:
+            boxes = target['boxes']
+            # Convert ground truth boxes to zero-based index and the
+            # representation from pixel indices to coordinates
+            labels = torch.cat([
+                torch.stack([h, o]) for h, o in
+                zip(self.human_idx * torch.ones_like(target['object']), target['object'])
+            ])
+            # Remove overlapping ground truth boxes
+            keep = batched_nms(
+                box_ops.box_cxcywh_to_xyxy(boxes),
+                torch.ones(len(boxes), device=boxes.device),
+                labels, iou_threshold=nms_thresh
+            )
+            boxes = boxes[keep]
+            labels = labels[keep]
+            object_targets.append(dict(
+                boxes=boxes, labels=labels
+            ))
+        return object_targets
+
+    def recover_boxes(self, boxes, size):
+        boxes = box_ops.box_cxcywh_to_xyxy(boxes)
+        h, w = size
+        scale_fct = torch.stack([w, h, w, h])
+        boxes = boxes * scale_fct
+        return boxes
+
+    def associate_with_ground_truth(self, boxes_h, boxes_o, targets):
+        n = boxes_h.shape[0]
+        labels = torch.zeros(n, self.num_classes, device=boxes_h.device)
+
+        gt_bx_h = self.recover_boxes(targets['boxes_h'], targets['size'])
+        gt_bx_o = self.recover_boxes(targets['boxes_o'], targets['size'])
+
+        x, y = torch.nonzero(torch.min(
+            box_iou(boxes_h, gt_bx_h),
+            box_iou(boxes_o, gt_bx_o)
+        ) >= self.fg_iou_thresh).unbind(1)
+
+        labels[x, targets['labels'][y]] = 1
+
+        return labels
+
+    def compute_detection_loss(self, outputs, targets):
+        loss_dict = self.criterion(outputs, targets)
+        weight_dict = self.criterion.weight_dict
+        losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+        return losses
+
+    def compute_interaction_loss(self, boxes, bh, bo, logits, prior, targets):
+        labels = torch.cat([
+            self.associate_with_ground_truth(bx[h], bx[o], target)
+            for bx, h, o, target in zip(boxes, bh, bo, targets)
+        ])
+        prior = torch.cat(prior, dim=1).prod(0)
+        x, y = torch.nonzero(prior).unbind(1)
+        logits = logits[x, y]; prior = prior[x, y]; labels = labels[x, y]
+
+        n_p = len(torch.nonzero(labels))
+        if dist.is_initialized():
+            world_size = dist.get_world_size()
+            n_p = torch.as_tensor([n_p], device='cuda')
+            dist.barrier()
+            dist.all_reduce(n_p)
+            n_p = (n_p / world_size).item()
+
+        loss = binary_focal_loss_with_logits(
+            torch.log(
+                (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
+            ), labels, reduction='sum',
+            alpha=self.alpha, gamma=self.gamma
+        )
+
+        return loss / n_p
 
     def prepare_region_proposals(self, results, hidden_states):
-        logits, boxes = results['pred_logits'], results['pred_boxes']
-        prob = torch.softmax(logits, -1)
-        scores, labels = prob[..., :-1].max(-1)
-
         region_props = []
-        for bx, sc, lb, hs in zip(boxes, scores, labels, hidden_states):
+        for res, hs in zip(results, hidden_states):
+            sc, lb, bx = res.values()
 
-            # Perform NMS
             keep = batched_nms(bx, sc, lb, 0.5)
             sc = sc[keep].view(-1)
             lb = lb[keep].view(-1)
             bx = bx[keep].view(-1, 4)
-            # TODO Maybe take this dimension from an argument
             hs = hs[keep].view(-1, 256)
 
-            h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
-            o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
+            keep = torch.nonzero(sc >= self.box_score_thresh).squeeze(1)
 
-            if self.training:
-                # Sample a fixed number of human and object boxes
-                keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
-                keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
+            is_human = lb == self.human_idx
+            hum = torch.nonzero(is_human).squeeze(1)
+            obj = torch.nonzero(is_human == 0).squeeze(1)
+            n_human = is_human[keep].sum(); n_object = len(keep) - n_human
+            # Keep the number of human and object instances in a specified interval
+            if n_human < self.min_h_instances:
+                keep_h = sc[hum].argsort(descending=True)[:self.min_h_instances]
+                keep_h = hum[keep_h]
+            elif n_human > self.max_h_instances:
+                keep_h = sc[hum].argsort(descending=True)[:self.max_h_instances]
+                keep_h = hum[keep_h]
             else:
-                keep_h = torch.argsort(sc[h_idx], descending=True)[:self.n_h_instances]
-                keep_o = torch.argsort(sc[o_idx], descending=True)[:self.n_o_instances]
-            keep = torch.cat([h_idx[keep_h], o_idx[keep_o]])
+                keep_h = torch.nonzero(is_human[keep]).squeeze(1)
+                keep_h = keep[keep_h]
+
+            if n_object < self.min_o_instances:
+                keep_o = sc[obj].argsort(descending=True)[:self.min_o_instances]
+                keep_o = obj[keep_o]
+            elif n_object > self.max_o_instances:
+                keep_o = sc[obj].argsort(descending=True)[:self.max_o_instances]
+                keep_o = obj[keep_o]
+            else:
+                keep_o = torch.nonzero(is_human[keep] == 0).squeeze(1)
+                keep_o = keep[keep_o]
+
+            keep = torch.cat([keep_h, keep_o])
 
             region_props.append(dict(
                 boxes=bx[keep],
@@ -105,40 +191,20 @@ class GenericHOIDetector(nn.Module):
 
         return region_props
 
-    def recover_boxes(self, boxes, image_size):
-        h, w = image_size
-        boxes = box_cxcywh_to_xyxy(boxes)
-        scale_fct = torch.stack([w, h, w, h]).view(1, 4)
-        return boxes * scale_fct
-
-    @torch.no_grad()
-    def postprocessing(self,
-        boxes, idx_h, idx_o, bbox_deltas,
-        logits, prior, objects, attn_maps, image_sizes
-    ):
-        n = [len(i) for i in idx_h]
+    def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps):
+        n = [len(b) for b in bh]
         logits = logits.split(n)
-        # bbox_deltas = bbox_deltas.split(n)
 
         detections = []
-        for bx, ih, io, lg, pr, obj, attn, size in zip(
-            boxes, idx_h, idx_o, logits, prior, objects, attn_maps, image_sizes
+        for bx, h, o, lg, pr, obj, attn in zip(
+            boxes, bh, bo, logits, prior, objects, attn_maps
         ):
-            # Recover the unary boxes before regression
-            bx = self.recover_boxes(bx, size)
-
-            # Recover the regressed box pairs
-            # bx_h_post, bx_o_post = self.box_pair_coder.decode(bx[idx_h], bx[idx_o], delta)
-            # bx_h_post = self.recover_boxes(bx_h_post, size)
-            # bx_o_post = self.recover_boxes(bx_o_post, size)
-
             pr = pr.prod(0)
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
-                boxes=bx, pairing=torch.stack([ih[x], io[x]]),
-                # boxes_h=bx_h_post, boxes_o=bx_o_post,
-                scores=scores * pr[x, y], repeat=x, labels=y,
+                boxes=bx, pairing=torch.stack([h[x], o[x]]),
+                scores=scores * pr[x, y], index=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
 
@@ -153,7 +219,6 @@ class GenericHOIDetector(nn.Module):
         -----------
             images: List[Tensor]
             targets: List[dict]
-
         Returns:
         --------
             results: List[dict]
@@ -179,57 +244,49 @@ class GenericHOIDetector(nn.Module):
         if self.detector.aux_loss:
             results['aux_outputs'] = self.detector._set_aux_loss(outputs_class, outputs_coord)
 
-        # if self.training:
-        #     object_targets = self.generate_object_targets(targets)
-        #     detection_loss = self.compute_detection_loss(results, object_targets)
+#        if self.training:
+#            object_targets = self.generate_object_targets(targets)
+#            detection_loss = self.compute_detection_loss(results, object_targets)
 
-        # results = self.postprocessors(results, image_sizes)
+        results = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
-        pairwise_features, prior, idx_h, idx_o, objects, attn_maps = self.interaction_head(
-            features[-1].tensors, region_props
+        logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
+            features[-1].tensors, image_sizes, region_props
         )
-
-        pairwise_features = torch.cat(pairwise_features)
-        logits = self.verb_predictor(pairwise_features)
-        # bbox_deltas = self.bbox_regressor(pairwise_features)
-
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
-            loss_dict = self.criterion(boxes, idx_h, idx_o, objects, prior, logits, None, targets)
-            # loss_dict = dict(
-            #     detection_loss=detection_loss,
-            #     interaction_loss=interaction_loss
-            # )
+            interaction_loss = self.compute_interaction_loss(boxes, bh, bo, logits, prior, targets)
+            loss_dict = dict(
+#                detection_loss=detection_loss,
+                interaction_loss=interaction_loss
+            )
             return loss_dict
 
-        detections = self.postprocessing(boxes, idx_h, idx_o, None, logits, prior, objects, attn_maps, image_sizes)
+        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps)
         return detections
 
 def build_detector(args, class_corr):
-    detr, _, _ = build_model(args)
+    detr, criterion, postprocessors = build_model(args)
     if os.path.exists(args.pretrained):
         print(f"Load pre-trained model from {args.pretrained}")
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
-
-    verb_predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
-    # bbox_regressor = torch.nn.Linear(args.repr_dim * 2, 8)
-
+    predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
     interaction_head = InteractionHead(
-        args.hidden_dim, args.repr_dim,
+        predictor, args.hidden_dim, args.repr_dim,
         detr.backbone[0].num_channels,
         args.num_classes, args.human_idx, class_corr
     )
-    criterion = SetCriterion(args)
     detector = GenericHOIDetector(
-        detr, criterion, interaction_head,
-        verb_predictor, None,
+        detr, criterion, postprocessors['bbox'], interaction_head,
+        box_score_thresh=args.box_score_thresh,
+        fg_iou_thresh=args.fg_iou_thresh,
         human_idx=args.human_idx, num_classes=args.num_classes,
         alpha=args.alpha, gamma=args.gamma,
-        box_score_thresh=args.box_score_thresh,
-        high_conf_perc=args.high_conf_perc,
-        n_h_instances=args.num_humans,
-        n_o_instances=args.num_objects
+        min_h_instances=args.min_h,
+        max_h_instances=args.max_h,
+        min_o_instances=args.min_o,
+        max_o_instances=args.max_o
     )
     return detector

@@ -13,7 +13,6 @@ import torch
 import random
 import warnings
 import argparse
-import torchvision
 import numpy as np
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -130,15 +129,10 @@ def sanity_check(args):
     args.human_idx = 0; args.num_classes = 117
     object_to_target = dataset.dataset.object_to_verb
     detector = build_detector(args, object_to_target)
-    if os.path.exists(args.resume):
-        print(f"Continue from saved checkpoint {args.resume}")
-        checkpoint = torch.load(args.resume, map_location='cpu')
-        checkpoint['model_state_dict'].pop('criterion.empty_weight')
-        detector.load_state_dict(checkpoint['model_state_dict'])
     if args.eval:
         detector.eval()
 
-    image, target = dataset[396]
+    image, target = dataset[0]
     outputs = detector([image], [target])
 
 if __name__ == '__main__':
@@ -169,8 +163,6 @@ if __name__ == '__main__':
 
     parser.add_argument('--no-aux-loss', dest='aux_loss', action='store_false')
     parser.add_argument('--set-cost-class', default=1, type=float)
-    parser.add_argument('--set-cost-object', default=1, type=float)
-    parser.add_argument('--set-cost-verb', default=1, type=float)
     parser.add_argument('--set-cost-bbox', default=5, type=float)
     parser.add_argument('--set-cost-giou', default=2, type=float)
     parser.add_argument('--bbox-loss-coef', default=5, type=float)
@@ -179,7 +171,7 @@ if __name__ == '__main__':
                         help="Relative classification weight of the no-object class")
 
     parser.add_argument('--alpha', default=0.5, type=float)
-    parser.add_argument('--gamma', default=2.0, type=float)
+    parser.add_argument('--gamma', default=0.2, type=float)
 
     parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--partitions', nargs='+', default=['train2015', 'test2015'], type=str)
@@ -199,9 +191,11 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--high-conf-perc', default=0.6, type=float)
-    parser.add_argument('--num-humans', default=10, type=int)
-    parser.add_argument('--num-objects', default=15, type=int)
+    parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
+    parser.add_argument('--min-h', default=3, type=int)
+    parser.add_argument('--min-o', default=3, type=int)
+    parser.add_argument('--max-h', default=15, type=int)
+    parser.add_argument('--max-o', default=15, type=int)
 
     args = parser.parse_args()
     print(args)

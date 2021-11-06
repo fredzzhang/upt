@@ -10,9 +10,9 @@ Australian Centre for Robotic Vision
 import os
 import torch
 import numpy as np
-import torchvision.ops.boxes as box_ops
 
 from tqdm import tqdm
+
 from torch.utils.data import Dataset
 
 from vcoco.vcoco import VCOCO
@@ -21,8 +21,6 @@ from hicodet.hicodet import HICODet
 import pocket
 from pocket.core import DistributedLearningEngine
 from pocket.utils import DetectionAPMeter, BoxPairAssociation
-
-from ops import box_cxcywh_to_xyxy
 
 import sys
 sys.path.append('detr')
@@ -37,11 +35,7 @@ def custom_collate(batch):
     return images, targets
 
 class DataFactory(Dataset):
-    def __init__(self, name, partition, data_root, training=None):
-        if training is None:
-            training = partition.startswith('train')
-        self.training = training
-
+    def __init__(self, name, partition, data_root):
         if name not in ['hicodet', 'vcoco']:
             raise ValueError("Unknown dataset ", name)
 
@@ -74,7 +68,7 @@ class DataFactory(Dataset):
             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
         scales = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
-        if self.training:
+        if partition.startswith('train'):
             self.transforms = T.Compose([
                 T.RandomHorizontalFlip(),
                 T.ColorJitter(.4, .4, .4),
@@ -86,7 +80,7 @@ class DataFactory(Dataset):
                         T.RandomResize(scales, max_size=1333),
                     ])
                 ), normalize,
-            ])
+        ])
         else:
             self.transforms = T.Compose([
                 T.RandomResize([800], max_size=1333),
@@ -101,6 +95,7 @@ class DataFactory(Dataset):
     def __getitem__(self, i):
         image, target = self.dataset[i]
         if self.name == 'hicodet':
+            target['labels'] = target['verb']
             # Convert ground truth boxes to zero-based index and the
             # representation from pixel indices to coordinates
             target['boxes_h'][:, :2] -= 1
@@ -108,28 +103,6 @@ class DataFactory(Dataset):
         else:
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
-
-        if self.training:
-            # Generate binary labels
-            labels = torch.zeros(len(target['boxes_h']), 117)
-            match = torch.min(
-                box_ops.box_iou(target['boxes_h'], target['boxes_h']),
-                box_ops.box_iou(target['boxes_o'], target['boxes_o'])
-            ) >= 0.5
-            x, y = torch.nonzero(
-                match * target['object'].eq(target['object'].unsqueeze(1))
-            ).unbind(1)
-            labels[x, target['verb'][y]] = 1
-            # Remove duplicated pairs
-            keep = pocket.ops.batched_pnms(
-                target['boxes_h'], target['boxes_o'],
-                torch.ones(target['object'].size()),
-                target['object'], .5
-            )
-            target['boxes_h'] = target['boxes_h'][keep]
-            target['boxes_o'] = target['boxes_o'][keep]
-            target['object'] = target['object'][keep]
-            target['labels'] = labels[keep]
 
         image, target = self.transforms(image, target)
 
@@ -142,13 +115,15 @@ class CustomisedDLE(DistributedLearningEngine):
         self.num_classes = num_classes
 
     def _on_start(self):
-        self.focal_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        # self.huber_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        # self.giou_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
+#        self.detection_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
+        self.interaction_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
 
     def _on_each_iteration(self):
         loss_dict = self._state.net(
             *self._state.inputs, targets=self._state.targets)
+        if loss_dict['interaction_loss'].isnan():
+            raise ValueError(f"The HOI loss is NaN for rank {self._rank}")
 
         self._state.loss = sum(loss for loss in loss_dict.values())
         self._state.optimizer.zero_grad(set_to_none=True)
@@ -157,24 +132,20 @@ class CustomisedDLE(DistributedLearningEngine):
             torch.nn.utils.clip_grad_norm_(self._state.net.parameters(), self.max_norm)
         self._state.optimizer.step()
 
-        self.focal_loss.append(loss_dict['focal_loss'])
-        # self.huber_loss.append(loss_dict['huber_loss'])
-        # self.giou_loss.append(loss_dict['giou_loss'])
+#        self.detection_loss.append(loss_dict['detection_loss'])
+        self.interaction_loss.append(loss_dict['interaction_loss'])
 
     def _print_statistics(self):
         super()._print_statistics()
-        focal_loss = self.focal_loss.mean()
-        # huber_loss = self.huber_loss.mean()
-        # giou_loss = self.giou_loss.mean()
+#        detection_loss = self.detection_loss.mean()
+        interaction_loss = self.interaction_loss.mean()
         if self._rank == 0:
             print(
-                f"focal loss: {focal_loss:.4f}"
-                # f", huber loss: {huber_loss:.4f}"
-                # f", giou loss: {giou_loss:.4f}"
+#                f"=> Detection loss: {detection_loss:.4f},",
+                f"interaction loss: {interaction_loss:.4f}"
             )
-        self.focal_loss.reset()
-        # self.huber_loss.reset()
-        # self.giou_loss.reset()
+#        self.detection_loss.reset()
+        self.interaction_loss.reset()
 
     @torch.no_grad()
     def test_hico(self, dataloader):
@@ -206,16 +177,14 @@ class CustomisedDLE(DistributedLearningEngine):
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
-            objects = output['objects'][output['repeat']]
+            objects = output['objects'][output['index']]
             scores = output['scores']
             verbs = output['labels']
             interactions = conversion[objects, verbs]
             # Recover target box scale
-            gt_bxh = target['boxes_h']; gt_bxh = box_cxcywh_to_xyxy(gt_bxh)
-            gt_bxo = target['boxes_o']; gt_bxo = box_cxcywh_to_xyxy(gt_bxo)
-            h, w = target['size']
-            scale_fct = torch.stack([w, h, w, h])
-            gt_bxh *= scale_fct; gt_bxo *= scale_fct
+            gt_bx_h = net.module.recover_boxes(target['boxes_h'], target['size'])
+            gt_bx_o = net.module.recover_boxes(target['boxes_o'], target['size'])
+
             # Associate detected pairs with ground truth pairs
             labels = torch.zeros_like(scores)
             unique_hoi = interactions.unique()
@@ -224,8 +193,8 @@ class CustomisedDLE(DistributedLearningEngine):
                 det_idx = torch.nonzero(interactions == hoi_idx).squeeze(1)
                 if len(gt_idx):
                     labels[det_idx] = associate(
-                        (gt_bxh[gt_idx].view(-1, 4),
-                        gt_bxo[gt_idx].view(-1, 4)),
+                        (gt_bx_h[gt_idx].view(-1, 4),
+                        gt_bx_o[gt_idx].view(-1, 4)),
                         (boxes_h[det_idx].view(-1, 4),
                         boxes_o[det_idx].view(-1, 4)),
                         scores[det_idx].view(-1)
