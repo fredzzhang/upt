@@ -17,12 +17,11 @@ from collections import OrderedDict
 
 import pocket
 
-from ops import compute_spatial_encodings, box_cxcywh_to_xyxy
+from ops import compute_spatial_encodings
 
 class MultiBranchFusion(Module):
     """
     Multi-branch fusion module
-
     Parameters:
     -----------
     appearance_size: int
@@ -208,7 +207,6 @@ class WeightingLayer(Module):
 
 class InteractionHead(Module):
     """Interaction head that constructs and classifies box pairs
-
     Parameters:
     -----------
     box_roi_pool: Module
@@ -236,6 +234,7 @@ class InteractionHead(Module):
         the number of positive logits will be averaged across all subprocesses
     """
     def __init__(self,
+        box_pair_predictor: Module,
         hidden_state_size: int,
         represetntation_size: int,
         num_channels: int,
@@ -244,6 +243,8 @@ class InteractionHead(Module):
         object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
+
+        self.box_pair_predictor = box_pair_predictor
 
         self.hidden_state_size = hidden_state_size
         self.representation_size = represetntation_size
@@ -330,6 +331,7 @@ class InteractionHead(Module):
 
     def forward(self,
         features: OrderedDict,
+        image_shapes: Tensor,
         region_props: List[dict]
     ) -> List[dict]:
         """
@@ -352,7 +354,6 @@ class InteractionHead(Module):
                 Object class indices for each pair
             `labels`: Tensor[G]
                 Target class indices for each pair
-
         Returns:
         --------
         results: List[dict]
@@ -375,7 +376,7 @@ class InteractionHead(Module):
         attn_maps_collated = []; # pairing_weights_collated = []
 
         for b_idx, props in enumerate(region_props):
-            boxes = box_cxcywh_to_xyxy(props['boxes'])
+            boxes = props['boxes']
             scores = props['scores']
             labels = props['labels']
             unary_f = props['hidden_states']
@@ -418,7 +419,7 @@ class InteractionHead(Module):
 
             # Compute spatial features
             box_pair_spatial = compute_spatial_encodings(
-                [boxes[x]], [boxes[y]], [(1., 1.)]
+                [boxes[x]], [boxes[y]], [image_shapes[b_idx]]
             )
             box_pair_spatial = self.spatial_head(box_pair_spatial)
             # Reshape the spatial features
@@ -451,7 +452,9 @@ class InteractionHead(Module):
             attn_maps_collated.append((unary_attn, pairwise_attn))
             # pairing_weights_collated.append(pairing_weights)
 
+        pairwise_features_collated = torch.cat(pairwise_features_collated)
+        logits = self.box_pair_predictor(pairwise_features_collated)
         # pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
 
-        return pairwise_features_collated, prior_collated, \
+        return logits, prior_collated, \
             boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
