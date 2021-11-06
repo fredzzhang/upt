@@ -199,9 +199,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
-    parser.add_argument('--high-conf-perc', default=0.6, type=float)
-    parser.add_argument('--num-humans', default=10, type=int)
-    parser.add_argument('--num-objects', default=15, type=int)
+    parser.add_argument('--min-instances', default=3, type=int)
+    parser.add_argument('--max-instances', default=15, type=int)
 
     args = parser.parse_args()
     print(args)
