@@ -88,6 +88,12 @@ def main(rank, args):
         cache_dir=args.output_dir
     )
 
+    if args.cache:
+        if args.dataset == 'vcoco':
+            raise NotImplementedError(f"Caching utility on V-COCO has not been implemented.")
+        engine.cache_hico(test_loader, args.output_dir)
+        return
+
     if args.eval:
         if args.dataset == 'vcoco':
             raise NotImplementedError(f"Evaluation on V-COCO has not been implemented.")
@@ -196,6 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--print-interval', default=500, type=int)
     parser.add_argument('--world-size', default=1, type=int)
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--cache', action='store_true')
     parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
