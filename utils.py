@@ -109,28 +109,6 @@ class DataFactory(Dataset):
             target['labels'] = target['actions']
             target['object'] = target.pop('objects')
 
-        if self.training:
-            # Generate binary labels
-            labels = torch.zeros(len(target['boxes_h']), 117)
-            match = torch.min(
-                box_ops.box_iou(target['boxes_h'], target['boxes_h']),
-                box_ops.box_iou(target['boxes_o'], target['boxes_o'])
-            ) >= 0.5
-            x, y = torch.nonzero(
-                match * target['object'].eq(target['object'].unsqueeze(1))
-            ).unbind(1)
-            labels[x, target['verb'][y]] = 1
-            # Remove duplicated pairs
-            keep = pocket.ops.batched_pnms(
-                target['boxes_h'], target['boxes_o'],
-                torch.ones(target['object'].size()),
-                target['object'], .5
-            )
-            target['boxes_h'] = target['boxes_h'][keep]
-            target['boxes_o'] = target['boxes_o'][keep]
-            target['object'] = target['object'][keep]
-            target['labels'] = labels[keep]
-
         image, target = self.transforms(image, target)
 
         return image, target
