@@ -10,6 +10,7 @@ Australian Centre for Robotic Vision
 import os
 import torch
 import numpy as np
+import scipy.io as sio
 
 from tqdm import tqdm
 
@@ -114,11 +115,6 @@ class CustomisedDLE(DistributedLearningEngine):
         self.max_norm = max_norm
         self.num_classes = num_classes
 
-    def _on_start(self):
-        self.meter = DetectionAPMeter(self.num_classes, algorithm='11P')
-#        self.detection_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-        self.interaction_loss = pocket.utils.SyncedNumericalMeter(maxlen=self._print_interval)
-
     def _on_each_iteration(self):
         loss_dict = self._state.net(
             *self._state.inputs, targets=self._state.targets)
@@ -131,21 +127,6 @@ class CustomisedDLE(DistributedLearningEngine):
         if self.max_norm > 0:
             torch.nn.utils.clip_grad_norm_(self._state.net.parameters(), self.max_norm)
         self._state.optimizer.step()
-
-#        self.detection_loss.append(loss_dict['detection_loss'])
-        self.interaction_loss.append(loss_dict['interaction_loss'])
-
-    def _print_statistics(self):
-        super()._print_statistics()
-#        detection_loss = self.detection_loss.mean()
-        interaction_loss = self.interaction_loss.mean()
-        if self._rank == 0:
-            print(
-#                f"=> Detection loss: {detection_loss:.4f},",
-                f"interaction loss: {interaction_loss:.4f}"
-            )
-#        self.detection_loss.reset()
-        self.interaction_loss.reset()
 
     @torch.no_grad()
     def test_hico(self, dataloader):
@@ -166,10 +147,10 @@ class CustomisedDLE(DistributedLearningEngine):
         for batch in tqdm(dataloader):
             inputs = pocket.ops.relocate_to_cuda(batch[0])
             output = net(inputs)
+
             # Skip images without detections
             if output is None or len(output) == 0:
                 continue
-
             # Batch size is fixed as 1 for inference
             assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
             output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
@@ -203,3 +184,75 @@ class CustomisedDLE(DistributedLearningEngine):
             meter.append(scores, interactions, labels)
 
         return meter.eval()
+
+    @torch.no_grad()
+    def cache_hico(self, dataloader, cache_dir='matlab'):
+        net = self._state.net
+        net.eval()
+
+        dataset = dataloader.dataset.dataset
+        conversion = torch.from_numpy(np.asarray(
+            dataset.object_n_verb_to_interaction, dtype=float
+        ))
+        object2int = dataset.object_to_interaction
+
+        # Include empty images when counting
+        nimages = len(dataset.annotations)
+        all_results = np.empty((600, nimages), dtype=object)
+
+        for i, batch in enumerate(tqdm(dataloader)):
+            inputs = pocket.ops.relocate_to_cuda(batch[0])
+            output = net(inputs)
+
+            # Skip images without detections
+            if output is None or len(output) == 0:
+                continue
+            # Batch size is fixed as 1 for inference
+            assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
+            output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
+            # NOTE Index i is the intra-index amongst images excluding those
+            # without ground truth box pairs
+            image_idx = dataset._idx[i]
+            # Format detections
+            boxes = output['boxes']
+            boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
+            objects = output['objects'][output['index']]
+            scores = output['scores']
+            verbs = output['labels']
+            interactions = conversion[objects, verbs]
+            # Convert box representation to pixel indices
+            boxes_h[:, 2:] -= 1
+            boxes_o[:, 2:] -= 1
+
+            # Group box pairs with the same predicted class
+            permutation = interactions.argsort()
+            boxes_h = boxes_h[permutation]
+            boxes_o = boxes_o[permutation]
+            interactions = interactions[permutation]
+            scores = scores[permutation]
+
+            # Store results
+            unique_class, counts = interactions.unique(return_counts=True)
+            n = 0
+            for cls_id, cls_num in zip(unique_class, counts):
+                all_results[cls_id.long(), image_idx] = torch.cat([
+                    boxes_h[n: n + cls_num],
+                    boxes_o[n: n + cls_num],
+                    scores[n: n + cls_num, None]
+                ], dim=1).numpy()
+                n += cls_num
+        
+        # Replace None with size (0,0) arrays
+        for i in range(600):
+            for j in range(nimages):
+                if all_results[i, j] is None:
+                    all_results[i, j] = np.zeros((0, 0))
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+        # Cache results
+        for object_idx in range(80):
+            interaction_idx = object2int[object_idx]
+            sio.savemat(
+                os.path.join(cache_dir, f'detections_{(object_idx + 1).zfill(2)}.mat'),
+                dict(all_boxes=all_results[interaction_idx])
+            )
