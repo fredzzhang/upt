@@ -74,10 +74,6 @@ def main(rank, args):
         print(f"=> Rank {rank}: continue from saved checkpoint {args.resume}")
         checkpoint = torch.load(args.resume, map_location='cpu')
         detector.load_state_dict(checkpoint['model_state_dict'])
-        # optim_state_dict = checkpoint['optim_state_dict']
-        # sched_state_dict = checkpoint['scheduler_state_dict']
-        # epoch = checkpoint['epoch']
-        # iteration = checkpoint['iteration']
     else:
         print(f"=> Rank {rank}: start from a randomly initialised model")
 
@@ -93,7 +89,15 @@ def main(rank, args):
 
     if args.eval:
         ap = engine.test_hico(test_loader)
-        print(f"The mAP is {ap.mean():.4f}, rare: {1}, none-rare: {1}")
+        # Fetch indices for rare and non-rare classes
+        num_anno = torch.as_tensor(trainset.dataset.anno_interaction)
+        rare = torch.nonzero(num_anno < 10).squeeze(1)
+        non_rare = torch.nonzero(num_anno >= 10).squeeze(1)
+        print(
+            f"The mAP is {ap.mean():.4f},"
+            f"rare: {ap[rare].mean():.4f},"
+            f"none-rare: {ap[non_rare].mean():.4f}"
+        )
         return
 
     for p in detector.detector.parameters():
