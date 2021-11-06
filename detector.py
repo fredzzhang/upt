@@ -15,10 +15,7 @@ from torch import nn, Tensor
 from typing import Optional, List
 from torchvision.ops.boxes import batched_nms
 
-from ops import (
-    SetCriterion, BoxPairCoder, BalancedBoxSampler,
-    box_cxcywh_to_xyxy
-)
+from ops import SetCriterion, box_cxcywh_to_xyxy
 from interaction_head import InteractionHead
 
 import sys
@@ -35,14 +32,16 @@ class GenericHOIDetector(nn.Module):
         interaction_head: nn.Module
     """
     def __init__(self,
-        detector: nn.Module, criterion: nn.Module, interaction_head: nn.Module,
-        verb_predictor: nn.Module, bbox_regressor: nn.Module,
+        detector: nn.Module, criterion: nn.Module,
+        interaction_head: nn.Module,
+        verb_predictor: nn.Module,
         # Dataset parameters
         human_idx: int, num_classes: int,
         # Training parameters
         alpha: float = .5, gamma: float = 2.,
-        box_score_thresh: float = .2, high_conf_perc: float = .8,
-        n_h_instances: int = 10, n_o_instances: int = 15,
+        box_score_thresh: float = .2,
+        min_instances: int = 3,
+        max_instances: int = 15,
     ) -> None:
         super().__init__()
         self.detector = detector
@@ -50,12 +49,6 @@ class GenericHOIDetector(nn.Module):
 
         self.interaction_head = interaction_head
         self.verb_predictor = verb_predictor
-        self.bbox_regressor = bbox_regressor
-
-        self.sampler = BalancedBoxSampler(
-            threshold=box_score_thresh,
-            perc=high_conf_perc
-        )
 
         self.human_idx = human_idx
         self.num_classes = num_classes
@@ -63,10 +56,41 @@ class GenericHOIDetector(nn.Module):
         self.alpha = alpha
         self.gamma = gamma
 
-        self.n_h_instances = n_h_instances
-        self.n_o_instances = n_o_instances
+        self.box_score_thresh = box_score_thresh
+        self.min_instances = min_instances
+        self.max_instances = max_instances
 
-        self.box_pair_coder = BoxPairCoder()
+    def sampler(self, scores, labels):
+        keep = torch.nonzero(scores >= self.box_score_thresh).squeeze(1)
+
+        is_hum = labels.eq(self.human_idx)
+        hum_idx = torch.nonzero(is_hum).squeeze(1)
+        obj_idx = torch.nonzero(is_hum == 0).squeeze(1)
+        n_hum = is_hum[keep].sum(); n_obj = len(keep) - n_hum
+
+        # Sample human and object instances
+        if n_hum < self.min_instances:
+            keep_h = scores[hum_idx].argsort(descending=True)[:self.min_instances]
+            keep_h = hum_idx[keep_h]
+        elif n_hum > self.max_instances:
+            keep_h = scores[hum_idx].argsort(descending=True)[:self.max_instances]
+            keep_h = hum_idx[keep_h]
+        else:
+            keep_h = torch.nonzero(is_hum[keep]).squeeze(1)
+            keep_h = keep[keep_h]
+
+        if n_obj < self.min_instances:
+            keep_o = scores[obj_idx].argsort(descending=True)[:self.min_instances]
+            keep_o = obj_idx[keep_o]
+        elif n_obj > self.max_instances:
+            keep_o = scores[obj_idx].argsort(descending=True)[:self.max_instances]
+            keep_o = obj_idx[keep_o]
+        else:
+            keep_o = torch.nonzero(is_hum[keep] == 0).squeeze(1)
+            keep_o = keep[keep_o]
+
+        keep = torch.cat([keep_h, keep_o])
+        return keep
 
     def prepare_region_proposals(self, results, hidden_states):
         logits, boxes = results['pred_logits'], results['pred_boxes']
@@ -84,18 +108,7 @@ class GenericHOIDetector(nn.Module):
             # TODO Maybe take this dimension from an argument
             hs = hs[keep].view(-1, 256)
 
-            h_idx = torch.nonzero(lb == self.human_idx).squeeze(1)
-            o_idx = torch.nonzero(lb != self.human_idx).squeeze(1)
-
-            if self.training:
-                # Sample a fixed number of human and object boxes
-                keep_h = torch.cat(self.sampler(sc[h_idx], self.n_h_instances))
-                keep_o = torch.cat(self.sampler(sc[o_idx], self.n_o_instances))
-            else:
-                keep_h = torch.argsort(sc[h_idx], descending=True)[:self.n_h_instances]
-                keep_o = torch.argsort(sc[o_idx], descending=True)[:self.n_o_instances]
-            keep = torch.cat([h_idx[keep_h], o_idx[keep_o]])
-
+            keep = self.sampler(sc, lb)
             region_props.append(dict(
                 boxes=bx[keep],
                 scores=sc[keep],
@@ -113,12 +126,12 @@ class GenericHOIDetector(nn.Module):
 
     @torch.no_grad()
     def postprocessing(self,
-        boxes, idx_h, idx_o, bbox_deltas,
-        logits, prior, objects, attn_maps, image_sizes
+        boxes, idx_h, idx_o,
+        logits, prior, objects,
+        attn_maps, image_sizes
     ):
         n = [len(i) for i in idx_h]
         logits = logits.split(n)
-        # bbox_deltas = bbox_deltas.split(n)
 
         detections = []
         for bx, ih, io, lg, pr, obj, attn, size in zip(
@@ -127,17 +140,11 @@ class GenericHOIDetector(nn.Module):
             # Recover the unary boxes before regression
             bx = self.recover_boxes(bx, size)
 
-            # Recover the regressed box pairs
-            # bx_h_post, bx_o_post = self.box_pair_coder.decode(bx[idx_h], bx[idx_o], delta)
-            # bx_h_post = self.recover_boxes(bx_h_post, size)
-            # bx_o_post = self.recover_boxes(bx_o_post, size)
-
             pr = pr.prod(0)
             x, y = torch.nonzero(pr).unbind(1)
             scores = torch.sigmoid(lg[x, y])
             detections.append(dict(
                 boxes=bx, pairing=torch.stack([ih[x], io[x]]),
-                # boxes_h=bx_h_post, boxes_o=bx_o_post,
                 scores=scores * pr[x, y], repeat=x, labels=y,
                 objects=obj, attn_maps=attn
             ))
@@ -183,7 +190,6 @@ class GenericHOIDetector(nn.Module):
         #     object_targets = self.generate_object_targets(targets)
         #     detection_loss = self.compute_detection_loss(results, object_targets)
 
-        # results = self.postprocessors(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
         pairwise_features, prior, idx_h, idx_o, objects, attn_maps = self.interaction_head(
@@ -192,19 +198,14 @@ class GenericHOIDetector(nn.Module):
 
         pairwise_features = torch.cat(pairwise_features)
         logits = self.verb_predictor(pairwise_features)
-        # bbox_deltas = self.bbox_regressor(pairwise_features)
 
         boxes = [r['boxes'] for r in region_props]
 
         if self.training:
             loss_dict = self.criterion(boxes, idx_h, idx_o, objects, prior, logits, None, targets)
-            # loss_dict = dict(
-            #     detection_loss=detection_loss,
-            #     interaction_loss=interaction_loss
-            # )
             return loss_dict
 
-        detections = self.postprocessing(boxes, idx_h, idx_o, None, logits, prior, objects, attn_maps, image_sizes)
+        detections = self.postprocessing(boxes, idx_h, idx_o, logits, prior, objects, attn_maps, image_sizes)
         return detections
 
 def build_detector(args, class_corr):
@@ -214,7 +215,6 @@ def build_detector(args, class_corr):
         detr.load_state_dict(torch.load(args.pretrained)['model_state_dict'])
 
     verb_predictor = torch.nn.Linear(args.repr_dim * 2, args.num_classes)
-    # bbox_regressor = torch.nn.Linear(args.repr_dim * 2, 8)
 
     interaction_head = InteractionHead(
         args.hidden_dim, args.repr_dim,
@@ -228,8 +228,7 @@ def build_detector(args, class_corr):
         human_idx=args.human_idx, num_classes=args.num_classes,
         alpha=args.alpha, gamma=args.gamma,
         box_score_thresh=args.box_score_thresh,
-        high_conf_perc=args.high_conf_perc,
-        n_h_instances=args.num_humans,
-        n_o_instances=args.num_objects
+        min_instances=args.min_instances,
+        max_instances=args.max_instances,
     )
     return detector
