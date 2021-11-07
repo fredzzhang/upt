@@ -253,6 +253,6 @@ class CustomisedDLE(DistributedLearningEngine):
         for object_idx in range(80):
             interaction_idx = object2int[object_idx]
             sio.savemat(
-                os.path.join(cache_dir, f'detections_{(object_idx + 1).zfill(2)}.mat'),
+                os.path.join(cache_dir, f'detections_{(object_idx + 1):02d}.mat'),
                 dict(all_boxes=all_results[interaction_idx])
             )
