@@ -223,7 +223,9 @@ class CustomisedDLE(DistributedLearningEngine):
             # Rescale the boxes to original image size
             ow, oh = dataset.image_size(i)
             h, w = output['size']
-            scale_fct = torch.stack([ow / w, oh / h, ow / w, oh / h], dim=1)
+            scale_fct = torch.as_tensor([
+                ow / w, oh / h, ow / w, oh / h
+            ]).unsqueeze(0)
             boxes_h *= scale_fct
             boxes_o *= scale_fct
 
