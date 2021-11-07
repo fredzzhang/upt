@@ -191,13 +191,13 @@ class GenericHOIDetector(nn.Module):
 
         return region_props
 
-    def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps):
+    def postprocessing(self, boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes):
         n = [len(b) for b in bh]
         logits = logits.split(n)
 
         detections = []
-        for bx, h, o, lg, pr, obj, attn in zip(
-            boxes, bh, bo, logits, prior, objects, attn_maps
+        for bx, h, o, lg, pr, obj, attn, size in zip(
+            boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes
         ):
             pr = pr.prod(0)
             x, y = torch.nonzero(pr).unbind(1)
@@ -205,7 +205,7 @@ class GenericHOIDetector(nn.Module):
             detections.append(dict(
                 boxes=bx, pairing=torch.stack([h[x], o[x]]),
                 scores=scores * pr[x, y], index=x, labels=y,
-                objects=obj, attn_maps=attn
+                objects=obj, attn_maps=attn, size=size
             ))
 
         return detections
@@ -264,7 +264,7 @@ class GenericHOIDetector(nn.Module):
             )
             return loss_dict
 
-        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps)
+        detections = self.postprocessing(boxes, bh, bo, logits, prior, objects, attn_maps, image_sizes)
         return detections
 
 def build_detector(args, class_corr):
