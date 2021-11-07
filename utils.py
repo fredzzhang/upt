@@ -220,6 +220,13 @@ class CustomisedDLE(DistributedLearningEngine):
             scores = output['scores']
             verbs = output['labels']
             interactions = conversion[objects, verbs]
+            # Rescale the boxes to original image size
+            ow, oh = dataset.image_size(i)
+            h, w = output['size']
+            scale_fct = torch.stack([ow / w, oh / h, ow / w, oh / h], dim=1)
+            boxes_h *= scale_fct
+            boxes_o *= scale_fct
+
             # Convert box representation to pixel indices
             boxes_h[:, 2:] -= 1
             boxes_o[:, 2:] -= 1
