@@ -135,7 +135,7 @@ class GenericHOIDetector(nn.Module):
 
         loss = binary_focal_loss_with_logits(
             torch.log(
-                (prior + 1e-8) / (1 + torch.exp(-logits) - prior)
+                prior / (1 + torch.exp(-logits) - prior) + 1e-8
             ), labels, reduction='sum',
             alpha=self.alpha, gamma=self.gamma
         )

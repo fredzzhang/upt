@@ -236,7 +236,7 @@ class InteractionHead(Module):
     def __init__(self,
         box_pair_predictor: Module,
         hidden_state_size: int,
-        represetntation_size: int,
+        representation_size: int,
         num_channels: int,
         num_classes: int,
         human_idx: int,
@@ -247,7 +247,7 @@ class InteractionHead(Module):
         self.box_pair_predictor = box_pair_predictor
 
         self.hidden_state_size = hidden_state_size
-        self.representation_size = represetntation_size
+        self.representation_size = representation_size
 
         self.num_classes = num_classes
         self.human_idx = human_idx
@@ -259,35 +259,35 @@ class InteractionHead(Module):
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, represetntation_size),
+            nn.Linear(256, representation_size),
             nn.ReLU(),
         )
 
         self.unary_layer = UnaryLayer(
             hidden_size=hidden_state_size,
-            representation_size=represetntation_size,
+            representation_size=representation_size,
             return_weights=True
         )
         # self.weighting_layer = WeightingLayer(
         #     hidden_size=hidden_state_size
         # )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
-            hidden_size=represetntation_size * 2,
+            hidden_size=representation_size * 2,
             return_weights=True
         )
 
         # Spatial attention head
         self.attention_head = MultiBranchFusion(
             hidden_state_size * 2,
-            represetntation_size, represetntation_size,
+            representation_size, representation_size,
             cardinality=16
         )
 
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
         # Attention head for global features
         self.attention_head_g = MultiBranchFusion(
-            num_channels, represetntation_size,
-            represetntation_size, cardinality=16
+            num_channels, representation_size,
+            representation_size, cardinality=16
         )
 
     def compute_prior_scores(self,
