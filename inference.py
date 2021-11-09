@@ -63,9 +63,14 @@ def visualise_entire_image(dataset, output):
     # Visualise unary attention
     fig, axe = plt.subplots(2, 4)
     axe = np.concatenate(axe)
+    ticks = list(range(attn_1[0].shape[0]))
     for ax, attn in zip(axe, attn_1):
         im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
         divider = make_axes_locatable(ax)
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(ticks)
+        ax.set_yticks(ticks)
+        ax.set_xticklabels(ticks)
         cax = divider.append_axes('right', size='5%', pad=0.05)
         fig.colorbar(im, cax=cax)
 
@@ -193,7 +198,5 @@ if __name__ == "__main__":
     parser.add_argument('--index', default=0, type=int)
     
     args = parser.parse_args()
-
-    args.resume = 'checkpoints/upt-r50-hicodet-b16.pt'
 
     main(args)
