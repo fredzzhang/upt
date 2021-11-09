@@ -42,7 +42,7 @@ def draw_boxes(ax, boxes):
     for i, (a, b, c) in enumerate(zip(xy, h.tolist(), w.tolist())):
         patch = patches.Rectangle(a.tolist(), b, c, facecolor='none', edgecolor='w')
         ax.add_patch(patch)
-        txt = plt.text(*a.tolist(), str(i), fontsize=20, fontweight='semibold', color='w')
+        txt = plt.text(*a.tolist(), str(i+1), fontsize=20, fontweight='semibold', color='w')
         txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
         plt.draw()
 
@@ -64,19 +64,20 @@ def visualise_entire_image(dataset, output):
     fig, axe = plt.subplots(2, 4)
     axe = np.concatenate(axe)
     ticks = list(range(attn_1[0].shape[0]))
+    labels = [v + 1 for v in ticks]
     for ax, attn in zip(axe, attn_1):
         im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
         divider = make_axes_locatable(ax)
         ax.set_xticks(ticks)
-        ax.set_xticklabels(ticks)
+        ax.set_xticklabels(labels)
         ax.set_yticks(ticks)
-        ax.set_xticklabels(ticks)
+        ax.set_yticklabels(labels)
         cax = divider.append_axes('right', size='5%', pad=0.05)
         fig.colorbar(im, cax=cax)
 
     x, y = torch.meshgrid(torch.arange(nh), torch.arange(no.long()))
     x, y = torch.nonzero(x != y).unbind(1)
-    pairs = [str((i.item(), j.item())) for i, j in zip(x, y)]
+    pairs = [str((i.item() + 1, j.item() + 1)) for i, j in zip(x, y)]
     # Visualise pairwise attention
     fig, axe = plt.subplots(2, 4)
     axe = np.concatenate(axe)
@@ -108,7 +109,7 @@ def visualise_entire_image(dataset, output):
         print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
         sample_idx = torch.nonzero(pred == verb).squeeze(1)
         for idx in sample_idx:
-            idxh, idxo = pairing[:, idx]
+            idxh, idxo = pairing[:, idx] + 1
             print(
                 f"({idxh.item():<2}, {idxo.item():<2}),",
                 f"score: {scores[idx]:.4f}"
@@ -198,5 +199,9 @@ if __name__ == "__main__":
     parser.add_argument('--index', default=0, type=int)
     
     args = parser.parse_args()
+
+    args.resume = 'checkpoints/upt-r50-hicodet-b16.pt'
+    args.box_score_thresh = 0.7
+    args.index = 5766
 
     main(args)
