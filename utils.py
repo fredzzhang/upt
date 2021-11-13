@@ -9,11 +9,12 @@ Australian Centre for Robotic Vision
 
 import os
 import torch
+import pickle
 import numpy as np
 import scipy.io as sio
 
 from tqdm import tqdm
-
+from collections import defaultdict
 from torch.utils.data import Dataset
 
 from vcoco.vcoco import VCOCO
@@ -108,6 +109,21 @@ class DataFactory(Dataset):
         image, target = self.transforms(image, target)
 
         return image, target
+
+class CacheTemplate(defaultdict):
+    """A template for VCOCO cached results """
+    def __init__(self, **kwargs):
+        super().__init__()
+        for k, v in kwargs.items():
+            self[k] = v
+    def __missing__(self, k):
+        seg = k.split('_')
+        # Assign zero score to missing actions
+        if seg[-1] == 'agent':
+            return 0.
+        # Assign zero score and a tiny box to missing <action,role> pairs
+        else:
+            return [0., 0., .1, .1, 0.]
 
 class CustomisedDLE(DistributedLearningEngine):
     def __init__(self, net, dataloader, max_norm=0, num_classes=117, **kwargs):
@@ -265,3 +281,48 @@ class CustomisedDLE(DistributedLearningEngine):
                 os.path.join(cache_dir, f'detections_{(object_idx + 1):02d}.mat'),
                 dict(all_boxes=all_results[interaction_idx])
             )
+
+    @torch.no_grad()
+    def cache_vcoco(self, dataloader, cache_path='vcoco_results.pkl'):
+        net = self._state.net
+        net.eval()
+
+        dataset = dataloader.dataset.dataset
+        all_results = []
+        for i, batch in enumerate(tqdm(dataloader)):
+            inputs = pocket.ops.relocate_to_cuda(batch[0])
+            output = net(inputs)
+
+            # Skip images without detections
+            if output is None or len(output) == 0:
+                continue
+            # Batch size is fixed as 1 for inference
+            assert len(output) == 1, f"Batch size is not 1 but {len(output)}."
+            output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
+            # NOTE Index i is the intra-index amongst images excluding those
+            # without ground truth box pairs
+            image_id = dataset.image_id[i]
+            # Format detections
+            boxes = output['boxes']
+            boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
+            scores = output['scores']
+            actions = output['labels']
+            # Rescale the boxes to original image size
+            ow, oh = dataset.image_size(i)
+            h, w = output['size']
+            scale_fct = torch.as_tensor([
+                ow / w, oh / h, ow / w, oh / h
+            ]).unsqueeze(0)
+            boxes_h *= scale_fct
+            boxes_o *= scale_fct
+
+            for bh, bo, s, a in zip(boxes_h, boxes_o, scores, actions):
+                a_name = dataset.actions[a].split()
+                result = CacheTemplate(image_id=image_id, person_box=bh.tolist())
+                result[a_name[0] + '_agent'] = s.item()
+                result['_'.join(a_name)] = bo.tolist() + [s.item()]
+                all_results.append(result)
+
+        with open(cache_path, 'wb') as f:
+            # Use protocol 2 for compatibility with Python2
+            pickle.dump(all_results, f, 2)
