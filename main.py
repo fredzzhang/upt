@@ -90,7 +90,7 @@ def main(rank, args):
         if args.dataset == 'hicodet':
             engine.cache_hico(test_loader, args.output_dir)
         elif args.dataset == 'vcoco':
-            engine.cache_vcoco(test_loader)
+            engine.cache_vcoco(test_loader, args.output_dir)
         return
 
     if args.eval:

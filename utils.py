@@ -283,7 +283,7 @@ class CustomisedDLE(DistributedLearningEngine):
             )
 
     @torch.no_grad()
-    def cache_vcoco(self, dataloader, cache_path='vcoco_results.pkl'):
+    def cache_vcoco(self, dataloader, cache_dir='vcoco_cache'):
         net = self._state.net
         net.eval()
 
@@ -301,7 +301,7 @@ class CustomisedDLE(DistributedLearningEngine):
             output = pocket.ops.relocate_to_cpu(output[0], ignore=True)
             # NOTE Index i is the intra-index amongst images excluding those
             # without ground truth box pairs
-            image_id = dataset.image_id[i]
+            image_id = dataset.image_id(i)
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
@@ -323,6 +323,8 @@ class CustomisedDLE(DistributedLearningEngine):
                 result['_'.join(a_name)] = bo.tolist() + [s.item()]
                 all_results.append(result)
 
-        with open(cache_path, 'wb') as f:
+        if os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+        with open(os.path.join(cache_dir, 'cache.pkl'), 'wb') as f:
             # Use protocol 2 for compatibility with Python2
             pickle.dump(all_results, f, 2)
