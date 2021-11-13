@@ -14,7 +14,6 @@ import random
 import warnings
 import argparse
 import numpy as np
-from torch._C import Value
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
@@ -60,13 +59,12 @@ def main(rank, args):
         sampler=torch.utils.data.SequentialSampler(testset)
     )
 
+    args.human_idx = 0
     if args.dataset == 'hicodet':
         object_to_target = train_loader.dataset.dataset.object_to_verb
-        args.human_idx = 0
         args.num_classes = 117
     elif args.dataset == 'vcoco':
-        object_to_target = train_loader.dataset.dataset.object_to_action
-        args.human_idx = 1
+        object_to_target = list(train_loader.dataset.dataset.object_to_action.values())
         args.num_classes = 24
     
     detector = build_detector(args, object_to_target)
