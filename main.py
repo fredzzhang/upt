@@ -87,9 +87,10 @@ def main(rank, args):
     )
 
     if args.cache:
-        if args.dataset == 'vcoco':
-            raise NotImplementedError(f"Caching utility on V-COCO has not been implemented.")
-        engine.cache_hico(test_loader, args.output_dir)
+        if args.dataset == 'hicodet':
+            engine.cache_hico(test_loader, args.output_dir)
+        elif args.dataset == 'vcoco':
+            engine.cache_vcoco(test_loader)
         return
 
     if args.eval:
