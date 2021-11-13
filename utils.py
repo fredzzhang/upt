@@ -323,7 +323,7 @@ class CustomisedDLE(DistributedLearningEngine):
                 result['_'.join(a_name)] = bo.tolist() + [s.item()]
                 all_results.append(result)
 
-        if os.path.exists(cache_dir):
+        if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
         with open(os.path.join(cache_dir, 'cache.pkl'), 'wb') as f:
             # Use protocol 2 for compatibility with Python2
