@@ -200,8 +200,4 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    args.resume = 'checkpoints/upt-r50-hicodet-b16.pt'
-    args.box_score_thresh = 0.7
-    args.index = 5766
-
     main(args)
