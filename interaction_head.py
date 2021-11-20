@@ -91,6 +91,8 @@ class UnaryLayer(Module):
         self.aggregate = nn.Linear(representation_size, hidden_size)
         self.norm = nn.LayerNorm(hidden_size)
 
+        self.dropout = nn.Dropout(0.1)
+
     def reshape(self, x: Tensor) -> Tensor:
         new_x_shape = x.size()[:-1] + (
             self.num_heads,
@@ -137,13 +139,14 @@ class UnaryLayer(Module):
             in zip(u_r_repeat, p_r, self.message)
         ]
 
-        aggreagted_messages = self.aggregate(F.relu(
+        aggregated_messages = self.aggregate(F.relu(
             torch.cat([
                 (w * m).sum(dim=0) for w, m
                 in zip(weights, messages)
             ], dim=-1)
         ))
-        x = self.norm(x + aggreagted_messages)
+        aggregated_messages = self.dropout(aggregated_messages)
+        x = self.norm(x + aggregated_messages)
 
         if self.return_weights:
             attn = weights
@@ -267,6 +270,10 @@ class InteractionHead(Module):
             hidden_size=hidden_state_size,
             representation_size=representation_size,
             return_weights=True
+        )
+        self.ffn = pocket.models.FeedForwardNetwork(
+            hidden_size=hidden_state_size,
+            intermediate_size=int(hidden_state_size * 4)
         )
         # self.weighting_layer = WeightingLayer(
         #     hidden_size=hidden_state_size
@@ -427,6 +434,7 @@ class InteractionHead(Module):
 
             # Run the unary_layer
             unary_f, unary_attn = self.unary_layer(unary_f, box_pair_spatial_reshaped)
+            unary_f = self.ffn(unary_f)
             # Run the weighting layer
             # pairing_weights = self.weighting_layer(unary_f, box_pair_spatial_reshaped, x_keep, y_keep)
 
