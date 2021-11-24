@@ -161,10 +161,10 @@ class ModifiedEncoder(Module):
     ) -> None:
         super().__init__()
         self.num_layers = num_layers
-        self.mod_enc = [ModifiedEncoderLayer(
+        self.mod_enc = nn.ModuleList([ModifiedEncoderLayer(
             hidden_size=hidden_size, representation_size=representation_size,
             num_heads=num_heads, dropout_prob=dropout_prob, return_weights=return_weights
-        ) for _ in range(num_layers)]
+        ) for _ in range(num_layers)])
     
     def forward(self, x: Tensor, y: Tensor) -> Tuple[Tensor, List[Optional[Tensor]]]:
         attn_weights = []
