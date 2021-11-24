@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from torch.nn import Module
 from torch import nn, Tensor
-from typing import List
+from typing import List, Optional, Tuple
 from collections import OrderedDict
 
 import pocket
@@ -90,7 +90,7 @@ class ModifiedEncoderLayer(Module):
         self.norm = nn.LayerNorm(hidden_size)
         self.dropout = nn.Dropout(dropout_prob)
 
-        self.ffn = pocket.models.FeedForwardNetwork(hidden_size, hidden_size * 4)
+        self.ffn = pocket.models.FeedForwardNetwork(hidden_size, hidden_size * 4, dropout_prob)
 
     def reshape(self, x: Tensor) -> Tensor:
         new_x_shape = x.size()[:-1] + (
@@ -105,7 +105,7 @@ class ModifiedEncoderLayer(Module):
         else:
             raise ValueError("Incorrect tensor shape")
 
-    def forward(self, x: Tensor, y: Tensor):
+    def forward(self, x: Tensor, y: Tensor) -> Tuple[Tensor, Optional[Tensor]]:
         device = x.device
         n = len(x)
 
@@ -152,6 +152,26 @@ class ModifiedEncoderLayer(Module):
         else: attn = None
 
         return x, attn
+
+class ModifiedEncoder(Module):
+    def __init__(self,
+        hidden_size: int = 256, representation_size: int = 512,
+        num_heads: int = 8, num_layers: int = 2,
+        dropout_prob: float = .1, return_weights: bool = False,
+    ) -> None:
+        super().__init__()
+        self.num_layers = num_layers
+        self.mod_enc = [ModifiedEncoderLayer(
+            hidden_size=hidden_size, representation_size=representation_size,
+            num_heads=num_heads, dropout_prob=dropout_prob, return_weights=return_weights
+        ) for _ in range(num_layers)]
+    
+    def forward(self, x: Tensor, y: Tensor) -> Tuple[Tensor, List[Optional[Tensor]]]:
+        attn_weights = []
+        for layer in self.mod_enc:
+            x, attn = layer(x, y)
+            attn_weights.append(attn)
+        return x, attn_weights
 
 class InteractionHead(Module):
     """Interaction head that constructs and classifies box pairs
@@ -211,9 +231,10 @@ class InteractionHead(Module):
             nn.ReLU(),
         )
 
-        self.unary_layer = ModifiedEncoderLayer(
+        self.unary_layer = ModifiedEncoder(
             hidden_size=hidden_state_size,
             representation_size=representation_size,
+            num_layers=2,
             return_weights=True
         )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
