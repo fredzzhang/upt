@@ -63,13 +63,11 @@ class MultiBranchFusion(Module):
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
 
-class UnaryLayer(Module):
+class ModifiedEncoderLayer(Module):
     def __init__(self,
-        hidden_size: int = 256,
-        representation_size: int = 512,
-        num_heads: int = 8,
-        return_weights: bool = False,
-    ):
+        hidden_size: int = 256, representation_size: int = 512,
+        num_heads: int = 8, dropout_prob: float = .1, return_weights: bool = False,
+    ) -> None:
         super().__init__()
         if representation_size % num_heads != 0:
             raise ValueError(
@@ -90,8 +88,9 @@ class UnaryLayer(Module):
         self.message = nn.ModuleList([nn.Linear(self.sub_repr_size, self.sub_repr_size) for _ in range(num_heads)])
         self.aggregate = nn.Linear(representation_size, hidden_size)
         self.norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout_prob)
 
-        self.dropout = nn.Dropout(0.1)
+        self.ffn = pocket.models.FeedForwardNetwork(hidden_size, hidden_size * 4)
 
     def reshape(self, x: Tensor) -> Tensor:
         new_x_shape = x.size()[:-1] + (
@@ -147,66 +146,12 @@ class UnaryLayer(Module):
         ))
         aggregated_messages = self.dropout(aggregated_messages)
         x = self.norm(x + aggregated_messages)
+        x = self.ffn(x)
 
-        if self.return_weights:
-            attn = weights
-        else:
-            attn = None
+        if self.return_weights: attn = weights
+        else: attn = None
 
         return x, attn
-class WeightingLayer(Module):
-    def __init__(self,
-        hidden_size: int = 1024,
-        num_heads: int = 8
-    ):
-        super().__init__()
-        if hidden_size % num_heads != 0:
-            raise ValueError(
-                f"The given hidden size {hidden_size} should be divisible by "
-                f"the number of attention heads {num_heads}."
-            )
-        self.sub_hidden_size = int(hidden_size / num_heads)
-        self.hidden_size = hidden_size
-        self.num_heads = num_heads
-
-        self.unary = nn.Linear(hidden_size, hidden_size)
-        self.pairwise = nn.Linear(hidden_size, hidden_size)
-        self.attn = nn.ModuleList([nn.Linear(3 * self.sub_hidden_size, 1) for _ in range(num_heads)])
-
-    def reshape(self, x: Tensor) -> Tensor:
-        new_x_shape = x.size()[:-1] + (
-            self.num_heads,
-            self.sub_hidden_size
-        )
-        x = x.view(*new_x_shape)
-        if len(new_x_shape) == 3:
-            return x.permute(1, 0, 2)
-        elif len(new_x_shape) == 4:
-            return x.permute(2, 0, 1, 3)
-        else:
-            raise ValueError("Incorrect tensor shape")
-
-    def forward(self, x: Tensor, y: Tensor, i: Tensor, j: Tensor):
-
-        u = F.relu(self.unary(x))
-        p = F.relu(self.pairwise(y))
-
-        # Unary features (H, N, L)
-        u_r = self.reshape(u)
-        # Pairwise features (H, N, N, L)
-        p_r = self.reshape(p)
-
-        # Features used to compute attention (H, M, 3L)
-        attn_features = torch.cat([
-            u_r[:, i], u_r[:, j], p_r[:, i, j]
-        ], dim=-1)
-        # Attention weights (H, M)
-        weights = torch.stack([
-            l(f) for f, l
-            in zip(attn_features, self.attn)
-        ]).squeeze(-1)
-
-        return weights
 
 class InteractionHead(Module):
     """Interaction head that constructs and classifies box pairs
@@ -266,18 +211,11 @@ class InteractionHead(Module):
             nn.ReLU(),
         )
 
-        self.unary_layer = UnaryLayer(
+        self.unary_layer = ModifiedEncoderLayer(
             hidden_size=hidden_state_size,
             representation_size=representation_size,
             return_weights=True
         )
-        self.ffn = pocket.models.FeedForwardNetwork(
-            hidden_size=hidden_state_size,
-            intermediate_size=int(hidden_state_size * 4)
-        )
-        # self.weighting_layer = WeightingLayer(
-        #     hidden_size=hidden_state_size
-        # )
         self.pairwise_layer = pocket.models.TransformerEncoderLayer(
             hidden_size=representation_size * 2,
             return_weights=True
@@ -434,10 +372,7 @@ class InteractionHead(Module):
 
             # Run the unary_layer
             unary_f, unary_attn = self.unary_layer(unary_f, box_pair_spatial_reshaped)
-            unary_f = self.ffn(unary_f)
-            # Run the weighting layer
-            # pairing_weights = self.weighting_layer(unary_f, box_pair_spatial_reshaped, x_keep, y_keep)
-
+            # Generate pairwise tokens with MBF
             pairwise_f = torch.cat([
                 self.attention_head(
                     torch.cat([unary_f[x_keep], unary_f[y_keep]], 1),
