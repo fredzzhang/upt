@@ -211,7 +211,6 @@ if __name__ == '__main__':
     parser.add_argument('--max-o', default=15, type=int)
 
     args = parser.parse_args()
-    print(args)
 
     if args.sanity:
         sanity_check(args)
