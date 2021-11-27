@@ -1,5 +1,8 @@
-# Spatially Conditioned Graphs
-Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
+# Unary&ndash;Pairwise Transformers
+
+<img src="assets/teaser.gif" align="left" width="800">
+
+<!-- Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
 
 <img src="./assets/scg.png" alt="graph" height="200" align="left"/>
 <img src="./assets/mbf.png" alt="multibranch_fusion" height="200" align="center"/>
@@ -179,4 +182,4 @@ python main.py --world-size 8 \
 
 ## Contact
 
-If you have any questions regarding our paper or the repo, please post them in [discussions](https://github.com/fredzzhang/spatially-conditioned-graphs/discussions). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact me at frederic.zhang@anu.edu.au
+If you have any questions regarding our paper or the repo, please post them in [discussions](https://github.com/fredzzhang/spatially-conditioned-graphs/discussions). If you ran into issues related to the code, feel free to open an issue. Alternatively, you can contact me at frederic.zhang@anu.edu.au -->
