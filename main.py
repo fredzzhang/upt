@@ -194,7 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--port', default='1234', type=str)
-    parser.add_argument('--seed', default=66, type=int)
+    parser.add_argument('--seed', default=8888, type=int)
     parser.add_argument('--pretrained', default='', help='Path to a pretrained detector')
     parser.add_argument('--resume', default='', help='Resume from a model')
     parser.add_argument('--output-dir', default='checkpoints')
