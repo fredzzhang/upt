@@ -1,6 +1,6 @@
 # Unary&ndash;Pairwise Transformers
 
-<img src="assets/teaser.gif" align="left" width="800">
+<img src="assets/teaser.gif" align="left" width="400">
 
 <!-- Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
 
