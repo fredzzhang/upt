@@ -1,4 +1,4 @@
-<img src="assets/teaser.gif" align="left" width="500">
+<img src="assets/teaser.gif" align="justify" width="500">
 
 # Unary&ndash;Pairwise Transformers
 
@@ -12,7 +12,7 @@ This repository contains the official PyTorch implementation for the paper
 
 ## Demo. on data in the wild
 
-<img src="assets/demo_friends.gif" align="left" width="500">
+<img src="assets/demo_friends.gif" align="justify" width="500">
 
 <!-- Official PyTorch implementation for our paper [Spatially Conditioned Graphs for Detecting Human-Object Interactions](https://arxiv.org/pdf/2012.06060.pdf)
 
