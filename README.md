@@ -59,6 +59,11 @@ git submodule update
     cd /path/to/upt/vcoco
     ln -s /path/to/coco ./mscoco2014
     ```
+
+## Training and Testing
+
+Refer to [`launch_template.sh`](./launch_template.sh) for training and testing commands with different options. To train the UPT model from scratch, you need to download the weights for the corresponding DETR model, and place them under `/path/to/upt/checkpoints/`. Adjust `--world-size` based on the number of GPUs available.
+
 ## Citation
 
 If you find our work useful for your research, please consider citing us:
