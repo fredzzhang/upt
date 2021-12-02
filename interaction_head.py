@@ -10,7 +10,6 @@ Australian Centre for Robotic Vision
 import torch
 import torch.nn.functional as F
 
-from torch.nn import Module
 from torch import nn, Tensor
 from typing import List, Optional, Tuple
 from collections import OrderedDict
@@ -19,9 +18,10 @@ import pocket
 
 from ops import compute_spatial_encodings
 
-class MultiBranchFusion(Module):
+class MultiBranchFusion(nn.Module):
     """
     Multi-branch fusion module
+
     Parameters:
     -----------
     appearance_size: int
@@ -63,7 +63,7 @@ class MultiBranchFusion(Module):
             in zip(self.fc_1, self.fc_2, self.fc_3)
         ]).sum(dim=0))
 
-class ModifiedEncoderLayer(Module):
+class ModifiedEncoderLayer(nn.Module):
     def __init__(self,
         hidden_size: int = 256, representation_size: int = 512,
         num_heads: int = 8, dropout_prob: float = .1, return_weights: bool = False,
@@ -153,7 +153,7 @@ class ModifiedEncoderLayer(Module):
 
         return x, attn
 
-class ModifiedEncoder(Module):
+class ModifiedEncoder(nn.Module):
     def __init__(self,
         hidden_size: int = 256, representation_size: int = 512,
         num_heads: int = 8, num_layers: int = 2,
@@ -173,41 +173,31 @@ class ModifiedEncoder(Module):
             attn_weights.append(attn)
         return x, attn_weights
 
-class InteractionHead(Module):
-    """Interaction head that constructs and classifies box pairs
+class InteractionHead(nn.Module):
+    """
+    Interaction head that constructs and classifies box pairs
+
     Parameters:
     -----------
-    box_roi_pool: Module
-        Module that performs RoI pooling or its variants
-    box_pair_head: Module
-        Module that constructs and computes box pair features
-    box_pair_suppressor: Module
-        Module that computes unary weights for each box pair
-    box_pair_predictor: Module
+    box_pair_predictor: nn.Module
         Module that classifies box pairs
-    human_idx: int
-        The index of human/person class in all objects
+    hidden_state_size: int
+        Size of the object features
+    representation_size: int
+        Size of the human-object pair features
+    num_channels: int
+        Number of channels in the global image features
     num_classes: int
         Number of target classes
-    box_nms_thresh: float, default: 0.5
-        Threshold used for non-maximum suppression
-    box_score_thresh: float, default: 0.2
-        Threshold used to filter out low-quality boxes
-    max_human: int, default: 15
-        Number of human detections to keep in each image
-    max_object: int, default: 15
-        Number of object (excluding human) detections to keep in each image
-    distributed: bool, default: False
-        Whether the model is trained under distributed data parallel. If True,
-        the number of positive logits will be averaged across all subprocesses
+    human_idx: int
+        The index of human/person class
+    object_class_to_target_class: List[list]
+        The set of valid action classes for each object type
     """
     def __init__(self,
-        box_pair_predictor: Module,
-        hidden_state_size: int,
-        representation_size: int,
-        num_channels: int,
-        num_classes: int,
-        human_idx: int,
+        box_pair_predictor: nn.Module,
+        hidden_state_size: int, representation_size: int,
+        num_channels: int, num_classes: int, human_idx: int,
         object_class_to_target_class: List[list]
     ) -> None:
         super().__init__()
@@ -231,48 +221,32 @@ class InteractionHead(Module):
             nn.ReLU(),
         )
 
-        self.unary_layer = ModifiedEncoder(
+        self.coop_layer = ModifiedEncoder(
             hidden_size=hidden_state_size,
             representation_size=representation_size,
             num_layers=2,
             return_weights=True
         )
-        self.pairwise_layer = pocket.models.TransformerEncoderLayer(
+        self.comp_layer = pocket.models.TransformerEncoderLayer(
             hidden_size=representation_size * 2,
             return_weights=True
         )
 
-        # Spatial attention head
-        self.attention_head = MultiBranchFusion(
+        self.mbf = MultiBranchFusion(
             hidden_state_size * 2,
             representation_size, representation_size,
             cardinality=16
         )
 
         self.avg_pool = nn.AdaptiveAvgPool2d(output_size=1)
-        # Attention head for global features
-        self.attention_head_g = MultiBranchFusion(
+        self.mbf_g = MultiBranchFusion(
             num_channels, representation_size,
             representation_size, cardinality=16
         )
 
     def compute_prior_scores(self,
-        x: Tensor, y: Tensor,
-        scores: Tensor,
-        object_class: Tensor
+        x: Tensor, y: Tensor, scores: Tensor, object_class: Tensor
     ) -> Tensor:
-        """
-        Parameters:
-        -----------
-            x: Tensor[M]
-                Indices of human boxes (paired)
-            y: Tensor[M]
-                Indices of object boxes (paired)
-            scores: Tensor[N]
-                Object detection scores (before pairing)
-            object_class: Tensor[N]
-                Object class indices (before pairing)
-        """
         prior_h = torch.zeros(len(x), self.num_classes, device=scores.device)
         prior_o = torch.zeros_like(prior_h)
 
@@ -338,14 +312,14 @@ class InteractionHead(Module):
 
         boxes_h_collated = []; boxes_o_collated = []
         prior_collated = []; object_class_collated = []
-        pairwise_features_collated = []
+        pairwise_tokens_collated = []
         attn_maps_collated = []; # pairing_weights_collated = []
 
         for b_idx, props in enumerate(region_props):
             boxes = props['boxes']
             scores = props['scores']
             labels = props['labels']
-            unary_f = props['hidden_states']
+            unary_tokens = props['hidden_states']
 
             is_human = labels == self.human_idx
             n_h = torch.sum(is_human); n = len(boxes)
@@ -355,10 +329,10 @@ class InteractionHead(Module):
                 o_idx = torch.nonzero(is_human == 0).squeeze(1)
                 perm = torch.cat([h_idx, o_idx])
                 boxes = boxes[perm]; scores = scores[perm]
-                labels = labels[perm]; unary_f = unary_f[perm]
+                labels = labels[perm]; unary_tokens = unary_tokens[perm]
             # Skip image when there are no valid human-object pairs
             if n_h == 0 or n <= 1:
-                pairwise_features_collated.append(torch.zeros(
+                pairwise_tokens_collated.append(torch.zeros(
                     0, 2 * self.representation_size,
                     device=device)
                 )
@@ -366,7 +340,6 @@ class InteractionHead(Module):
                 boxes_o_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 object_class_collated.append(torch.zeros(0, device=device, dtype=torch.int64))
                 prior_collated.append(torch.zeros(2, 0, self.num_classes, device=device))
-                # pairing_weights_collated.append(torch.zeros(self.weighting_layer.num_heads, 0, device=device))
                 continue
 
             # Get the pairwise indices
@@ -391,21 +364,21 @@ class InteractionHead(Module):
             # Reshape the spatial features
             box_pair_spatial_reshaped = box_pair_spatial.reshape(n, n, -1)
 
-            # Run the unary_layer
-            unary_f, unary_attn = self.unary_layer(unary_f, box_pair_spatial_reshaped)
+            # Run the cooperative layer
+            unary_tokens, unary_attn = self.coop_layer(unary_tokens, box_pair_spatial_reshaped)
             # Generate pairwise tokens with MBF
-            pairwise_f = torch.cat([
-                self.attention_head(
-                    torch.cat([unary_f[x_keep], unary_f[y_keep]], 1),
+            pairwise_tokens = torch.cat([
+                self.mbf(
+                    torch.cat([unary_tokens[x_keep], unary_tokens[y_keep]], 1),
                     box_pair_spatial_reshaped[x_keep, y_keep]
-                ), self.attention_head_g(
+                ), self.mbf_g(
                     global_features[b_idx, None],
                     box_pair_spatial_reshaped[x_keep, y_keep])
             ], dim=1)
-            # Run the pairwise layer
-            pairwise_f, pairwise_attn = self.pairwise_layer(pairwise_f)
+            # Run the competitive layer
+            pairwise_tokens, pairwise_attn = self.comp_layer(pairwise_tokens)
 
-            pairwise_features_collated.append(pairwise_f)
+            pairwise_tokens_collated.append(pairwise_tokens)
             boxes_h_collated.append(x_keep)
             boxes_o_collated.append(y_keep)
             object_class_collated.append(labels[y_keep])
@@ -414,11 +387,9 @@ class InteractionHead(Module):
                 x_keep, y_keep, scores, labels)
             )
             attn_maps_collated.append((unary_attn, pairwise_attn))
-            # pairing_weights_collated.append(pairing_weights)
 
-        pairwise_features_collated = torch.cat(pairwise_features_collated)
-        logits = self.box_pair_predictor(pairwise_features_collated)
-        # pairing_weights_collated = torch.cat(pairing_weights_collated, dim=1)
+        pairwise_tokens_collated = torch.cat(pairwise_tokens_collated)
+        logits = self.box_pair_predictor(pairwise_tokens_collated)
 
         return logits, prior_collated, \
             boxes_h_collated, boxes_o_collated, object_class_collated, attn_maps_collated
