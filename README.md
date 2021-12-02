@@ -7,14 +7,14 @@ This repository contains the official PyTorch implementation for the paper
 \[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__preprint__]()\]
 
 ## Abstract
-> ...<br/>However, the success of such one-stage HOI detectors can largely be attributed to the representation power of transformers. We discovered that when equipped with the same transformer, their two-stage counterparts can be more performant and memory-efficient, while taking a fraction of the time to train. In this work, we propose the Unary&ndash;Pairwise Transformer, a two-stage detector that exploits unary and pairwise representa-tions for HOIs. We observe that the unary and pairwise parts of our transformer network specialize, with the former preferentially increasing the scores of positive examples and the latter decreasing the scores of negative examples. We evaluate our method on the HICO-DET and V-COCO datasets, and significantly outperform state-of-the-art approaches. At inference time, our model with ResNet50 approaches real-time performance on a single GPU.
+> ...<br/>However, the success of such one-stage HOI detectors can largely be attributed to the representation power of transformers. We discovered that when equipped with the same transformer, their two-stage counterparts can be more performant and memory-efficient, while taking a fraction of the time to train. In this work, we propose the Unary&ndash;Pairwise Transformer, a two-stage detector that exploits unary and pairwise representa-tions for HOIs. We observe that the unary and pairwise parts of our transformer network specialise, with the former preferentially increasing the scores of positive examples and the latter decreasing the scores of negative examples. We evaluate our method on the HICO-DET and V-COCO datasets, and significantly outperform state-of-the-art approaches. At inference time, our model with ResNet50 approaches real-time performance on a single GPU.
 
 ## Demonstration on data in the wild
 
 <img src="assets/demo_friends.gif" align="justify" width="500">
 
 ## Model Zoo
-We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potential downstream applications. In addition, we also provide weights for fine-tuned DETR models to facilitate reproducibility. To attempt fine-tuning the DETR model yourself, refer to [this repository](https://github.com/fredzzhang/hicodet). The inference speed was benchmarked using a GeForce RTX 3090.
+We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potential downstream applications. In addition, we also provide weights for fine-tuned DETR models to facilitate reproducibility. To attempt fine-tuning the DETR model yourself, refer to [this repository](https://github.com/fredzzhang/hicodet).
 
 |Model|Dataset|Default Settings|Inference|UPT Weights|DETR Weights|
 |:-|:-:|:-:|:-:|:-:|:-:|
@@ -28,6 +28,7 @@ We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potenti
 |UPT-R101|V-COCO|`60.7`|`66.2`|`0.064s`|[weights](https://drive.google.com/file/d/1ahE9K-XocMfu1wm8-rEBx4py8m3-_tmt/view?usp=sharing)|[weights](https://drive.google.com/file/d/1XbOaGiVPuxmB9PwrcUdf0XlGnuTXARjX/view?usp=sharing)|
 |UPT-R101-DC5|V-COCO|`61.3`|`67.1`|`0.131s`|[weights](https://drive.google.com/file/d/17ivP1npCR6jkxOQ3mfN83hrQfeVkiDC9/view?usp=sharing)|[weights](https://drive.google.com/file/d/1uenwkJ_0dSb_nb4HAlMUZ-bMjxD55XTR/view?usp=sharing)|
 
+ The inference speed was benchmarked using a GeForce RTX 3090. Note that weights of the UPT model include those of the backbone detector (DETR). You do not need to download the DETR weights, unless you want to train the UPT model yourself.
 ## Prerequisites
 1. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket). The recommended PyTorch version is 1.9.0.
 2. Download the repository and the submodules.
