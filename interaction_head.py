@@ -269,42 +269,24 @@ class InteractionHead(nn.Module):
 
         return torch.stack([prior_h, prior_o])
 
-    def forward(self,
-        features: OrderedDict,
-        image_shapes: Tensor,
-        region_props: List[dict]
-    ) -> List[dict]:
+    def forward(self, features: OrderedDict, image_shapes: Tensor, region_props: List[dict]):
         """
         Parameters:
         -----------
         features: OrderedDict
             Feature maps returned by FPN
-        detections: List[dict]
-            Object detections with the following keys
-            `boxes`: Tensor[N, 4]
-            `labels`: Tensor[N]
-            `scores`: Tensor[N]
-        image_shapes: List[Tuple[int, int]]
-            Image shapes, heights followed by widths
-        targets: List[dict], optional
-            Interaction targets with the following keys
-            `boxes_h`: Tensor[G, 4]
-            `boxes_o`: Tensor[G, 4]
-            `object`: Tensor[G]
-                Object class indices for each pair
-            `labels`: Tensor[G]
-                Target class indices for each pair
-        Returns:
-        --------
-        results: List[dict]
-            Results organised by images. During training the loss dict is appended to the
-            end of the list, resulting in the length being larger than the number of images
-            by one. For the result dict of each image, refer to `postprocess` for documentation.
-            The loss dict has two keys
-            `hoi_loss`: Tensor
-                Loss for HOI classification
-            `interactiveness_loss`: Tensor
-                Loss incurred on learned unary weights
+        image_shapes: Tensor
+            (B, 2) Image shapes, heights followed by widths
+        region_props: List[dict]
+            Region proposals with the following keys
+            `boxes`: Tensor
+                (N, 4) Bounding boxes
+            `scores`: Tensor
+                (N,) Object confidence scores
+            `labels`: Tensor
+                (N,) Object class indices
+            `hidden_states`: Tensor
+                (N, 256) Object features
         """
 
         device = features.device
@@ -313,7 +295,7 @@ class InteractionHead(nn.Module):
         boxes_h_collated = []; boxes_o_collated = []
         prior_collated = []; object_class_collated = []
         pairwise_tokens_collated = []
-        attn_maps_collated = []; # pairing_weights_collated = []
+        attn_maps_collated = []
 
         for b_idx, props in enumerate(region_props):
             boxes = props['boxes']
@@ -352,8 +334,6 @@ class InteractionHead(nn.Module):
             if len(x_keep) == 0:
                 # Should never happen, just to be safe
                 raise ValueError("There are no valid human-object pairs")
-            # Human nodes have been duplicated and will be treated independently
-            # of the humans included amongst object nodes
             x = x.flatten(); y = y.flatten()
 
             # Compute spatial features
