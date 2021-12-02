@@ -1,5 +1,6 @@
 """
-Train and validate with distributed data parallel
+Utilities for training, testing and caching results
+for HICO-DET and V-COCO evaluations.
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 
@@ -67,18 +68,17 @@ def main(rank, args):
         object_to_target = list(train_loader.dataset.dataset.object_to_action.values())
         args.num_classes = 24
     
-    detector = build_detector(args, object_to_target)
+    upt = build_detector(args, object_to_target)
 
     if os.path.exists(args.resume):
         print(f"=> Rank {rank}: continue from saved checkpoint {args.resume}")
         checkpoint = torch.load(args.resume, map_location='cpu')
-        detector.load_state_dict(checkpoint['model_state_dict'])
+        upt.load_state_dict(checkpoint['model_state_dict'])
     else:
         print(f"=> Rank {rank}: start from a randomly initialised model")
 
     engine = CustomisedDLE(
-        detector,
-        train_loader,
+        upt, train_loader,
         max_norm=args.clip_max_norm,
         num_classes=args.num_classes,
         print_interval=args.print_interval,
@@ -108,23 +108,12 @@ def main(rank, args):
         )
         return
 
-    for p in detector.detector.parameters():
+    for p in upt.detector.parameters():
         p.requires_grad = False
-    # Seperate backbone parameters from the rest
-    param_dicts = [
-        {
-            "params": [p for n, p in detector.named_parameters()
-            if "backbone" in n and p.requires_grad], "lr": args.lr_backbone
-        }, {
-            "params": [p for n, p in detector.named_parameters()
-            if "detector" in n and "backbone" not in n and p.requires_grad],
-            "lr": args.lr_transformer
-        }, {
-            "params": [p for n, p in detector.named_parameters()
-            if "interaction_head" in n and p.requires_grad]
-        }
-    ]
-    # Fine-tune backbone with lower learning rate
+    param_dicts = [{
+        "params": [p for n, p in upt.named_parameters()
+        if "interaction_head" in n and p.requires_grad]
+    }]
     optim = torch.optim.AdamW(
         param_dicts, lr=args.lr_head,
         weight_decay=args.weight_decay
@@ -140,18 +129,16 @@ def sanity_check(args):
     dataset = DataFactory(name='hicodet', partition=args.partitions[0], data_root=args.data_root)
     args.human_idx = 0; args.num_classes = 117
     object_to_target = dataset.dataset.object_to_verb
-    detector = build_detector(args, object_to_target)
+    upt = build_detector(args, object_to_target)
     if args.eval:
-        detector.eval()
+        upt.eval()
 
     image, target = dataset[0]
-    outputs = detector([image], [target])
+    outputs = upt([image], [target])
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--lr-transformer', default=1e-5, type=float)
-    parser.add_argument('--lr-backbone', default=1e-6, type=float)
     parser.add_argument('--lr-head', default=1e-4, type=float)
     parser.add_argument('--batch-size', default=2, type=int)
     parser.add_argument('--weight-decay', default=1e-4, type=float)
@@ -205,12 +192,11 @@ if __name__ == '__main__':
     parser.add_argument('--sanity', action='store_true')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
-    parser.add_argument('--min-h', default=3, type=int)
-    parser.add_argument('--min-o', default=3, type=int)
-    parser.add_argument('--max-h', default=15, type=int)
-    parser.add_argument('--max-o', default=15, type=int)
+    parser.add_argument('--min-instances', default=3, type=int)
+    parser.add_argument('--max-instances', default=15, type=int)
 
     args = parser.parse_args()
+    print(args)
 
     if args.sanity:
         sanity_check(args)
