@@ -174,7 +174,7 @@ class CustomisedDLE(DistributedLearningEngine):
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
-            objects = output['objects'][output['index']]
+            objects = output['objects']
             scores = output['scores']
             verbs = output['labels']
             interactions = conversion[objects, verbs]
@@ -232,7 +232,7 @@ class CustomisedDLE(DistributedLearningEngine):
             # Format detections
             boxes = output['boxes']
             boxes_h, boxes_o = boxes[output['pairing']].unbind(0)
-            objects = output['objects'][output['index']]
+            objects = output['objects']
             scores = output['scores']
             verbs = output['labels']
             interactions = conversion[objects, verbs]
