@@ -32,12 +32,31 @@ class UPT(nn.Module):
     Parameters:
     -----------
     detector: nn.Module
-        Object detector module
+        Object detector (DETR)
+    postprocessor: nn.Module
+        Postprocessor for the object detector
     interaction_head: nn.Module
+        Interaction head of the network
+    human_idx: int
+        Index of the human class
+    num_classes: int
+        Number of action classes
+    alpha: float
+        Hyper-parameter in the focal loss
+    gamma: float
+        Hyper-parameter in the focal loss
+    box_score_thresh: float
+        Threshold used to eliminate low-confidence objects
+    fg_iou_thresh: float
+        Threshold used to associate detections with ground truth
+    min_instances: float
+        Minimum number of instances (human or object) to sample
+    max_instances: float
+        Maximum number of instances (human or object) to sample
     """
     def __init__(self,
         detector: nn.Module,
-        postprocessors: nn.Module,
+        postprocessor: nn.Module,
         interaction_head: nn.Module,
         human_idx: int, num_classes: int,
         alpha: float = 0.5, gamma: float = 2.0,
@@ -46,7 +65,7 @@ class UPT(nn.Module):
     ) -> None:
         super().__init__()
         self.detector = detector
-        self.postprocessors = postprocessors
+        self.postprocessor = postprocessor
         self.interaction_head = interaction_head
 
         self.human_idx = human_idx
@@ -227,7 +246,7 @@ class UPT(nn.Module):
         outputs_coord = self.detector.bbox_embed(hs).sigmoid()
 
         results = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
-        results = self.postprocessors(results, image_sizes)
+        results = self.postprocessor(results, image_sizes)
         region_props = self.prepare_region_proposals(results, hs[-1])
 
         logits, prior, bh, bo, objects, attn_maps = self.interaction_head(
