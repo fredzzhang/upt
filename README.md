@@ -64,6 +64,8 @@ git submodule update
 
 Refer to [`launch_template.sh`](./launch_template.sh) for training and testing commands with different options. To train the UPT model from scratch, you need to download the weights for the corresponding DETR model, and place them under `/path/to/upt/checkpoints/`. Adjust `--world-size` based on the number of GPUs available.
 
+To test the UPT model on HICO-DET, you can either use the Python utilities we implemented or the Matlab utilities provided by [Chao et al.](https://github.com/ywchao/ho-rcnn). For V-COCO, we did not implement evaluation utilities, and instead use the utilities provided by [Gupta et al.](https://github.com/s-gupta/v-coco#evaluation). Refer to these [instructions](https://github.com/fredzzhang/upt/discussions/14) for more details.
+
 ## Citation
 
 If you find our work useful for your research, please consider citing us:
