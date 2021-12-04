@@ -192,7 +192,6 @@ if __name__ == "__main__":
     parser.add_argument('--human-idx', type=int, default=0)
 
     parser.add_argument('--device', default='cpu')
-    parser.add_argument('--port', default='1234', type=str)
     parser.add_argument('--pretrained', default='', help='Path to a pretrained detector')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
