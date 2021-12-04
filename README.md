@@ -60,6 +60,17 @@ git submodule update
     ln -s /path/to/coco ./mscoco2014
     ```
 
+## Inference
+We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps
+```python
+python inference.py --resume checkpoints/upt-r50-hicodet.pt --index 8789
+```
+Here is the sample output. Note that we manually selected some informative attention maps to display.
+
+<img src="./assets/sample_8789.png" align="left" height="150">
+<img src="./assets/coop_attn_8789.png" align="center" height="150">
+<img src="./assets/comp_attn_8789.png" align="right" height="150">
+
 ## Training and Testing
 
 Refer to [`launch_template.sh`](./launch_template.sh) for training and testing commands with different options. To train the UPT model from scratch, you need to download the weights for the corresponding DETR model, and place them under `/path/to/upt/checkpoints/`. Adjust `--world-size` based on the number of GPUs available.
