@@ -183,7 +183,6 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', default='hicodet', type=str)
     parser.add_argument('--partition', default='test2015', type=str)
     parser.add_argument('--data-root', default='./hicodet')
-    parser.add_argument('--num-classes', type=int, default=117)
     parser.add_argument('--human-idx', type=int, default=0)
 
     parser.add_argument('--device', default='cpu')
