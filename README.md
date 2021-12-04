@@ -28,7 +28,7 @@ We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potenti
 |UPT-R101|V-COCO|`60.7`|`66.2`|`0.064s`|[weights](https://drive.google.com/file/d/1ahE9K-XocMfu1wm8-rEBx4py8m3-_tmt/view?usp=sharing)|[weights](https://drive.google.com/file/d/1XbOaGiVPuxmB9PwrcUdf0XlGnuTXARjX/view?usp=sharing)|
 |UPT-R101-DC5|V-COCO|`61.3`|`67.1`|`0.131s`|[weights](https://drive.google.com/file/d/17ivP1npCR6jkxOQ3mfN83hrQfeVkiDC9/view?usp=sharing)|[weights](https://drive.google.com/file/d/1uenwkJ_0dSb_nb4HAlMUZ-bMjxD55XTR/view?usp=sharing)|
 
- The inference speed was benchmarked using a GeForce RTX 3090. Note that weights of the UPT model include those of the backbone detector (DETR). You do not need to download the DETR weights, unless you want to train the UPT model from scratch. Training UPT-R50 takes around `5` hours for HICO-DET and `40` minutes for V-COCO, with 8 GeForce GTX TITAN X GPUs. This is merely a tenth of the time needed to train other one-stage models such as [QPIC](https://github.com/hitachi-rd-cv/qpic).
+ The inference speed was benchmarked using a GeForce RTX 3090. Note that weights of the UPT model include those of the backbone detector (DETR). You do not need to download the DETR weights, unless you want to train the UPT model from scratch. Training UPT-R50 takes around `5` hours for HICO-DET and `40` minutes for V-COCO, with 8 GeForce GTX TITAN X GPUs, almost a tenth of the time compared to other one-stage models such as [QPIC](https://github.com/hitachi-rd-cv/qpic).
 ## Prerequisites
 1. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket). The recommended PyTorch version is 1.9.0.
 2. Download the repository and the submodules.
@@ -82,8 +82,8 @@ If you find our work useful for your research, please consider citing us:
   author    = {Frederic Z. Zhang, Dylan Campbell and Stephen Gould},
   title     = {Spatially Conditioned Graphs for Detecting Human–Object Interactions},
   booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-  month     = {October}
-  year      = {2021}
+  month     = {October},
+  year      = {2021},
   pages     = {13319-13327}
 }
 ```
