@@ -22,20 +22,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from utils import DataFactory
 from detector import build_detector
 
-def colour_pool(n):
-    pool = [
-        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
-        '#9467bd', '#17becf', '#e377c2'
-    ]
-    nc = len(pool)
-
-    repeat = n // nc
-    big_pool = []
-    for _ in range(repeat):
-        big_pool += pool
-    return big_pool + pool[:n%nc]
-
-
 def draw_boxes(ax, boxes):
     xy = boxes[:, :2].unbind(0)
     h, w = (boxes[:, 2:] - boxes[:, :2]).unbind(1)
@@ -46,10 +32,10 @@ def draw_boxes(ax, boxes):
         txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
         plt.draw()
 
-def visualise_entire_image(dataset, output):
+def visualise_entire_image(im, output):
     """Visualise bounding box pairs in the whole image by classes"""
     # Rescale the boxes to original image size
-    ow, oh = output['original_size']
+    ow, oh = im.size
     h, w = output['size']
     scale_fct = torch.as_tensor([
         ow / w, oh / h, ow / w, oh / h
@@ -57,77 +43,85 @@ def visualise_entire_image(dataset, output):
     boxes = output['boxes'] * scale_fct
     nh = output['objects'].cumsum(0).eq(0).sum() + 1; no = len(output['objects']) / nh + 1
 
-    attn_1 = output['attn_maps'][0]
-    attn_2 = output['attn_maps'][1]
+    # attn_1 = output['attn_maps'][0]
+    # attn_2 = output['attn_maps'][1]
 
-    # Visualise unary attention
-    fig, axe = plt.subplots(2, 4)
-    axe = np.concatenate(axe)
-    ticks = list(range(attn_1[0].shape[0]))
-    labels = [v + 1 for v in ticks]
-    for ax, attn in zip(axe, attn_1):
-        im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
-        divider = make_axes_locatable(ax)
-        ax.set_xticks(ticks)
-        ax.set_xticklabels(labels)
-        ax.set_yticks(ticks)
-        ax.set_yticklabels(labels)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
-        fig.colorbar(im, cax=cax)
+    # # Visualise unary attention
+    # fig, axe = plt.subplots(2, 4)
+    # axe = np.concatenate(axe)
+    # ticks = list(range(attn_1[0].shape[0]))
+    # labels = [v + 1 for v in ticks]
+    # for ax, attn in zip(axe, attn_1):
+    #     im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
+    #     divider = make_axes_locatable(ax)
+    #     ax.set_xticks(ticks)
+    #     ax.set_xticklabels(labels)
+    #     ax.set_yticks(ticks)
+    #     ax.set_yticklabels(labels)
+    #     cax = divider.append_axes('right', size='5%', pad=0.05)
+    #     fig.colorbar(im, cax=cax)
 
-    x, y = torch.meshgrid(torch.arange(nh), torch.arange(no.long()))
-    x, y = torch.nonzero(x != y).unbind(1)
-    pairs = [str((i.item() + 1, j.item() + 1)) for i, j in zip(x, y)]
-    # Visualise pairwise attention
-    fig, axe = plt.subplots(2, 4)
-    axe = np.concatenate(axe)
-    ticks = list(range(len(pairs)))
-    for ax, attn in zip(axe, attn_2):
-        im = ax.imshow(attn, vmin=0, vmax=1)
-        divider = make_axes_locatable(ax)
-        ax.set_xticks(ticks)
-        ax.set_xticklabels(pairs, rotation=45)
-        ax.set_yticks(ticks)
-        ax.set_yticklabels(pairs)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
-        fig.colorbar(im, cax=cax)
+    # x, y = torch.meshgrid(torch.arange(nh), torch.arange(no.long()))
+    # x, y = torch.nonzero(x != y).unbind(1)
+    # pairs = [str((i.item() + 1, j.item() + 1)) for i, j in zip(x, y)]
+    # # Visualise pairwise attention
+    # fig, axe = plt.subplots(2, 4)
+    # axe = np.concatenate(axe)
+    # ticks = list(range(len(pairs)))
+    # for ax, attn in zip(axe, attn_2):
+    #     im = ax.imshow(attn, vmin=0, vmax=1)
+    #     divider = make_axes_locatable(ax)
+    #     ax.set_xticks(ticks)
+    #     ax.set_xticklabels(pairs, rotation=45)
+    #     ax.set_yticks(ticks)
+    #     ax.set_yticklabels(pairs)
+    #     cax = divider.append_axes('right', size='5%', pad=0.05)
+    #     fig.colorbar(im, cax=cax)
 
-    im = dataset.dataset.load_image(
-        os.path.join(
-            dataset.dataset._root,
-            dataset.dataset.filename(args.index)
-        )
-    )
-
-    # Print predicted classes and scores
+    # # Print predicted classes and scores
     scores = output['scores']
     pred = output['labels']
-    pairing = output['pairing']
+    # pairing = output['pairing']
+    keep = torch.nonzero(torch.logical_and(scores >= 0.01, pred == 7)).squeeze(1)
 
-    unique_actions = torch.unique(pred)
-    for verb in unique_actions:
-        print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
-        sample_idx = torch.nonzero(pred == verb).squeeze(1)
-        for idx in sample_idx:
-            idxh, idxo = pairing[:, idx] + 1
-            print(
-                f"({idxh.item():<2}, {idxo.item():<2}),",
-                f"score: {scores[idx]:.4f}"
-            )
-
-    # Draw the bounding boxes
-    plt.figure()
+    bx_h, bx_o = boxes[output['pairing']].unbind(0)
+    pocket.utils.draw_box_pairs(im, bx_h[keep], bx_o[keep], width=5)
     plt.imshow(im)
-    ax = plt.gca()
-    draw_boxes(ax, boxes)
+    plt.axis('off')
+
+    for i in range(len(keep)):
+        txt = plt.text(*bx_h[keep[i], :2], f"{scores[keep[i]]:.2f}", fontsize=15, fontweight='semibold', color='w')
+        txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
+        plt.draw()
     plt.show()
+
+    # unique_actions = torch.unique(pred)
+    # for verb in unique_actions:
+    #     print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
+    #     sample_idx = torch.nonzero(pred == verb).squeeze(1)
+    #     for idx in sample_idx:
+    #         idxh, idxo = pairing[:, idx] + 1
+    #         print(
+    #             f"({idxh.item():<2}, {idxo.item():<2}),",
+    #             f"score: {scores[idx]:.4f}"
+    #         )
+
+    # # Draw the bounding boxes
+    # plt.figure()
+    # plt.imshow(im)
+    # ax = plt.gca()
+    # draw_boxes(ax, boxes)
+    # plt.show()
 
 @torch.no_grad()
 def main(args):
 
-    dataset = DataFactory(name='hicodet', partition=args.partition, data_root=args.data_root)
+    dataset = DataFactory(name=args.dataset, partition=args.partition, data_root=args.data_root)
+    conversion = dataset.dataset.object_to_verb if args.dataset is 'hicodet' \
+        else list(dataset.dataset.object_to_action.values())
+    args.num_classes = 117 if args.dataset is 'hicodet' else 24
 
-    detector = build_detector(args, dataset.dataset.object_to_verb)
+    detector = build_detector(args, conversion)
     detector.eval()
 
     if os.path.exists(args.resume):
@@ -140,20 +134,15 @@ def main(args):
     image, _ = dataset[args.index]
     output = detector([image])
     output[0]['original_size'] = dataset.dataset.image_size(args.index)
-    visualise_entire_image(dataset, output[0])
+    image = dataset.dataset.load_image(
+        os.path.join(dataset.dataset._root,
+            dataset.dataset.filename(args.index)
+    ))
+    visualise_entire_image(image, output[0])
 
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--lr-transformer', default=1e-5, type=float)
-    parser.add_argument('--lr-backbone', default=1e-6, type=float)
-    parser.add_argument('--lr-head', default=1e-4, type=float)
-    parser.add_argument('--batch-size', default=2, type=int)
-    parser.add_argument('--weight-decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=20, type=int)
-    parser.add_argument('--lr-drop', default=15, type=int)
-    parser.add_argument('--clip-max-norm', default=0.1, type=float)
-
     parser.add_argument('--backbone', default='resnet50', type=str)
     parser.add_argument('--dilation', action='store_true')
     parser.add_argument('--position-embedding', default='sine', type=str, choices=('sine', 'learned'))
@@ -190,14 +179,16 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained', default='', help='Path to a pretrained detector')
     parser.add_argument('--box-score-thresh', default=0.2, type=float)
     parser.add_argument('--fg-iou-thresh', default=0.5, type=float)
-    parser.add_argument('--min-h', default=3, type=int)
-    parser.add_argument('--min-o', default=3, type=int)
-    parser.add_argument('--max-h', default=15, type=int)
-    parser.add_argument('--max-o', default=15, type=int)
+    parser.add_argument('--min-instances', default=3, type=int)
+    parser.add_argument('--max-instances', default=15, type=int)
 
     parser.add_argument('--resume', default='', help='Resume from a model')
     parser.add_argument('--index', default=0, type=int)
     
     args = parser.parse_args()
+
+    # args.resume = "checkpoints/sota-b32/upt-r50-hicodet.pt"
+    # args.box_score_thresh = 0.1
+    # args.index = 2502
 
     main(args)
