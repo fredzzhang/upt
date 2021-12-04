@@ -77,7 +77,7 @@ Additionally, to cater for different needs, we implemented an option to run infe
 ```python
 python inference.py --resume checkpoints/upt-r50-hicodet.pt --image-path assets/bikes.jpeg --action 76
 ```
-<img src="./assets/bikes_inf.png" height="300">
+<img src="./assets/bikes_inf.png" height="250" align="center">
 
 ## Training and Testing
 
