@@ -1,5 +1,5 @@
 """
-Visualise box pairs in an image
+Visualise detected human-object interactions in an image
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 
@@ -7,9 +7,7 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
-import enum
 import os
-import sys
 import torch
 import pocket
 import argparse
@@ -197,7 +195,8 @@ if __name__ == "__main__":
     parser.add_argument('--index', default=0, type=int)
     parser.add_argument('--action', default=None, type=int,
         help="Index of the action class to visualise.")
-    parser.add_argument('--action-score-thresh', default=0.2, type=float)
+    parser.add_argument('--action-score-thresh', default=0.2, type=float,
+        help="Threshold on action classes.")
     
     args = parser.parse_args()
 
