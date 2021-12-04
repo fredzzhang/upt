@@ -7,6 +7,7 @@ The Australian National University
 Australian Centre for Robotic Vision
 """
 
+import enum
 import os
 import sys
 import torch
@@ -32,94 +33,105 @@ def draw_boxes(ax, boxes):
         txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
         plt.draw()
 
-def visualise_entire_image(im, output):
+def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
     """Visualise bounding box pairs in the whole image by classes"""
     # Rescale the boxes to original image size
-    ow, oh = im.size
+    ow, oh = image.size
     h, w = output['size']
     scale_fct = torch.as_tensor([
         ow / w, oh / h, ow / w, oh / h
     ]).unsqueeze(0)
     boxes = output['boxes'] * scale_fct
-    nh = output['objects'].cumsum(0).eq(0).sum() + 1; no = len(output['objects']) / nh + 1
+    # nh = output['objects'].cumsum(0).eq(0).sum() + 1; no = len(output['objects']) / nh + 1
+    nh = len(output['pairing'][0].unique()); no = len(boxes)
 
-    # attn_1 = output['attn_maps'][0]
-    # attn_2 = output['attn_maps'][1]
-
-    # # Visualise unary attention
-    # fig, axe = plt.subplots(2, 4)
-    # axe = np.concatenate(axe)
-    # ticks = list(range(attn_1[0].shape[0]))
-    # labels = [v + 1 for v in ticks]
-    # for ax, attn in zip(axe, attn_1):
-    #     im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
-    #     divider = make_axes_locatable(ax)
-    #     ax.set_xticks(ticks)
-    #     ax.set_xticklabels(labels)
-    #     ax.set_yticks(ticks)
-    #     ax.set_yticklabels(labels)
-    #     cax = divider.append_axes('right', size='5%', pad=0.05)
-    #     fig.colorbar(im, cax=cax)
-
-    # x, y = torch.meshgrid(torch.arange(nh), torch.arange(no.long()))
-    # x, y = torch.nonzero(x != y).unbind(1)
-    # pairs = [str((i.item() + 1, j.item() + 1)) for i, j in zip(x, y)]
-    # # Visualise pairwise attention
-    # fig, axe = plt.subplots(2, 4)
-    # axe = np.concatenate(axe)
-    # ticks = list(range(len(pairs)))
-    # for ax, attn in zip(axe, attn_2):
-    #     im = ax.imshow(attn, vmin=0, vmax=1)
-    #     divider = make_axes_locatable(ax)
-    #     ax.set_xticks(ticks)
-    #     ax.set_xticklabels(pairs, rotation=45)
-    #     ax.set_yticks(ticks)
-    #     ax.set_yticklabels(pairs)
-    #     cax = divider.append_axes('right', size='5%', pad=0.05)
-    #     fig.colorbar(im, cax=cax)
-
-    # # Print predicted classes and scores
+    # Print predicted classes and scores
     scores = output['scores']
     pred = output['labels']
-    # pairing = output['pairing']
-    keep = torch.nonzero(torch.logical_and(scores >= 0.01, pred == 7)).squeeze(1)
+    if action is not None:
+        keep = torch.nonzero(torch.logical_and(scores >= thresh, pred == action)).squeeze(1)
 
-    bx_h, bx_o = boxes[output['pairing']].unbind(0)
-    pocket.utils.draw_box_pairs(im, bx_h[keep], bx_o[keep], width=5)
-    plt.imshow(im)
+        bx_h, bx_o = boxes[output['pairing']].unbind(0)
+        pocket.utils.draw_box_pairs(image, bx_h[keep], bx_o[keep], width=5)
+        plt.imshow(image)
+        plt.axis('off')
+
+        for i in range(len(keep)):
+            txt = plt.text(*bx_h[keep[i], :2], f"{scores[keep[i]]:.2f}", fontsize=15, fontweight='semibold', color='w')
+            txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
+            plt.draw()
+        plt.show()
+        return
+
+    pairing = output['pairing']
+    coop_attn = output['attn_maps'][0]
+    comp_attn = output['attn_maps'][1]
+
+    for i, attn_1 in enumerate(coop_attn):
+        # Visualise attention from the cooperative layer
+        fig, axe = plt.subplots(2, 4)
+        fig.suptitle(f"Attention in coop. layer {i}")
+        axe = np.concatenate(axe)
+        ticks = list(range(attn_1[0].shape[0]))
+        labels = [v + 1 for v in ticks]
+        for ax, attn in zip(axe, attn_1):
+            im = ax.imshow(attn.squeeze().T, vmin=0, vmax=1)
+            divider = make_axes_locatable(ax)
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels)
+            ax.set_yticks(ticks)
+            ax.set_yticklabels(labels)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            fig.colorbar(im, cax=cax)
+
+    x, y = torch.meshgrid(torch.arange(nh), torch.arange(no))
+    x, y = torch.nonzero(x != y).unbind(1)
+    pairs = [str((i.item() + 1, j.item() + 1)) for i, j in zip(x, y)]
+
+    # Visualise attention from the competitive layer
+    fig, axe = plt.subplots(2, 4)
+    fig.suptitle("Attention in comp. layer")
+    axe = np.concatenate(axe)
+    ticks = list(range(len(pairs)))
+    for ax, attn in zip(axe, comp_attn):
+        im = ax.imshow(attn, vmin=0, vmax=1)
+        divider = make_axes_locatable(ax)
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(pairs, rotation=45)
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(pairs)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax)
+
+
+    unique_actions = torch.unique(pred)
+    for verb in unique_actions:
+        print(f"\n=> Action: {actions[verb]}")
+        sample_idx = torch.nonzero(pred == verb).squeeze(1)
+        for idx in sample_idx:
+            idxh, idxo = pairing[:, idx] + 1
+            print(
+                f"({idxh.item():<2}, {idxo.item():<2}),",
+                f"score: {scores[idx]:.4f}"
+            )
+
+    # Draw the bounding boxes
+    plt.figure()
+    plt.imshow(image)
     plt.axis('off')
-
-    for i in range(len(keep)):
-        txt = plt.text(*bx_h[keep[i], :2], f"{scores[keep[i]]:.2f}", fontsize=15, fontweight='semibold', color='w')
-        txt.set_path_effects([peff.withStroke(linewidth=5, foreground='#000000')])
-        plt.draw()
+    ax = plt.gca()
+    draw_boxes(ax, boxes)
     plt.show()
-
-    # unique_actions = torch.unique(pred)
-    # for verb in unique_actions:
-    #     print(f"\n=> Action: {dataset.dataset.verbs[verb]}")
-    #     sample_idx = torch.nonzero(pred == verb).squeeze(1)
-    #     for idx in sample_idx:
-    #         idxh, idxo = pairing[:, idx] + 1
-    #         print(
-    #             f"({idxh.item():<2}, {idxo.item():<2}),",
-    #             f"score: {scores[idx]:.4f}"
-    #         )
-
-    # # Draw the bounding boxes
-    # plt.figure()
-    # plt.imshow(im)
-    # ax = plt.gca()
-    # draw_boxes(ax, boxes)
-    # plt.show()
 
 @torch.no_grad()
 def main(args):
 
     dataset = DataFactory(name=args.dataset, partition=args.partition, data_root=args.data_root)
-    conversion = dataset.dataset.object_to_verb if args.dataset is 'hicodet' \
+    conversion = dataset.dataset.object_to_verb if args.dataset == 'hicodet' \
         else list(dataset.dataset.object_to_action.values())
-    args.num_classes = 117 if args.dataset is 'hicodet' else 24
+    args.num_classes = 117 if args.dataset == 'hicodet' else 24
+    actions = dataset.dataset.verbs if args.dataset == 'hicodet' else \
+        dataset.dataset.actions
 
     detector = build_detector(args, conversion)
     detector.eval()
@@ -138,7 +150,7 @@ def main(args):
         os.path.join(dataset.dataset._root,
             dataset.dataset.filename(args.index)
     ))
-    visualise_entire_image(image, output[0])
+    visualise_entire_image(image, output[0], actions, args.action, args.action_score_thresh)
 
 if __name__ == "__main__":
     
@@ -184,11 +196,10 @@ if __name__ == "__main__":
 
     parser.add_argument('--resume', default='', help='Resume from a model')
     parser.add_argument('--index', default=0, type=int)
+    parser.add_argument('--action', default=None, type=int,
+        help="Index of the action class to visualise.")
+    parser.add_argument('--action-score-thresh', default=0.2, type=float)
     
     args = parser.parse_args()
-
-    # args.resume = "checkpoints/sota-b32/upt-r50-hicodet.pt"
-    # args.box_score_thresh = 0.1
-    # args.index = 2502
 
     main(args)
