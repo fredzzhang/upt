@@ -67,9 +67,9 @@ python inference.py --resume checkpoints/upt-r50-hicodet.pt --index 8789
 ```
 Here is the sample output. Note that we manually selected some informative attention maps to display.
 
-<img src="./assets/sample_8789.png" align="left" height="150">
-<img src="./assets/coop_attn_8789.png" align="center" height="150">
-<img src="./assets/comp_attn_8789.png" align="right" height="150">
+<img src="./assets/sample_8789.png" align="left" height="180">
+<img src="./assets/coop_attn_8789.png" align="left" height="180">
+<img src="./assets/comp_attn_8789.png" align="center" height="180">
 
 ## Training and Testing
 
