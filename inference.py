@@ -10,6 +10,7 @@ Australian Centre for Robotic Vision
 import os
 import torch
 import pocket
+import warnings
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,6 +21,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from utils import DataFactory
 from detector import build_detector
+
+warnings.filterwarnings("ignore")
 
 def draw_boxes(ax, boxes):
     xy = boxes[:, :2].unbind(0)
@@ -140,14 +143,19 @@ def main(args):
         detector.load_state_dict(checkpoint['model_state_dict'])
     else:
         print(f"=> Start from a randomly initialised model")
-    
-    image, _ = dataset[args.index]
-    output = detector([image])
-    output[0]['original_size'] = dataset.dataset.image_size(args.index)
-    image = dataset.dataset.load_image(
-        os.path.join(dataset.dataset._root,
-            dataset.dataset.filename(args.index)
-    ))
+
+    if args.image_path is None:
+        image, _ = dataset[args.index]
+        output = detector([image])
+        image = dataset.dataset.load_image(
+            os.path.join(dataset.dataset._root,
+                dataset.dataset.filename(args.index)
+        ))
+    else:
+        image = dataset.dataset.load_image(args.image_path)
+        image_tensor, _ = dataset.transforms(image, None)
+        output = detector([image_tensor])
+
     visualise_entire_image(image, output[0], actions, args.action, args.action_score_thresh)
 
 if __name__ == "__main__":
@@ -197,6 +205,8 @@ if __name__ == "__main__":
         help="Index of the action class to visualise.")
     parser.add_argument('--action-score-thresh', default=0.2, type=float,
         help="Threshold on action classes.")
+    parser.add_argument('--image-path', default=None, type=str,
+        help="Path to an image file.")
     
     args = parser.parse_args()
 
