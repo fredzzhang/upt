@@ -60,6 +60,25 @@ git submodule update
     ln -s /path/to/coco ./mscoco2014
     ```
 
+## Inference
+We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps from the cooperative and competitive layers.
+```python
+python inference.py --resume checkpoints/upt-r50-hicodet.pt --index 8789
+```
+Here is the sample output. Note that we manually selected some informative attention maps to display. The predicted scores for each action will be printed by the script as well.
+
+<img src="./assets/sample_8789.png" align="left" height="200">
+<img src="./assets/coop_attn_8789.png" align="left" height="200">
+<img src="./assets/comp_attn_8789.png" align="center" height="200">
+
+To select the V-COCO dataset and V-COCO models, use the flag `--dataset vcoco`, and then load the corresponding weights. To visualise interactive human-object pairs for a particular action class, use the flag `--action` to specify the action index. Here is a [lookup table](./assets/actions.txt) for the action indices.
+
+Additionally, to cater for different needs, we implemented an option to run inference on custom images, using the flag `--image-path`. The following is an example.
+```python
+python inference.py --resume checkpoints/upt-r50-hicodet.pt --image-path assets/bikes.jpeg --action 76
+```
+<img src="./assets/bikes_inf.png" height="250" align="center">
+
 ## Training and Testing
 
 Refer to [`launch_template.sh`](./launch_template.sh) for training and testing commands with different options. To train the UPT model from scratch, you need to download the weights for the corresponding DETR model, and place them under `/path/to/upt/checkpoints/`. Adjust `--world-size` based on the number of GPUs available.
