@@ -43,15 +43,14 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
         ow / w, oh / h, ow / w, oh / h
     ]).unsqueeze(0)
     boxes = output['boxes'] * scale_fct
-    # nh = output['objects'].cumsum(0).eq(0).sum() + 1; no = len(output['objects']) / nh + 1
+    # Find the number of human and object instances
     nh = len(output['pairing'][0].unique()); no = len(boxes)
 
-    # Print predicted classes and scores
     scores = output['scores']
     pred = output['labels']
+    # Visualise detected human-object pairs with attached scores
     if action is not None:
         keep = torch.nonzero(torch.logical_and(scores >= thresh, pred == action)).squeeze(1)
-
         bx_h, bx_o = boxes[output['pairing']].unbind(0)
         pocket.utils.draw_box_pairs(image, bx_h[keep], bx_o[keep], width=5)
         plt.imshow(image)
@@ -68,8 +67,8 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
     coop_attn = output['attn_maps'][0]
     comp_attn = output['attn_maps'][1]
 
+    # Visualise attention from the cooperative layer
     for i, attn_1 in enumerate(coop_attn):
-        # Visualise attention from the cooperative layer
         fig, axe = plt.subplots(2, 4)
         fig.suptitle(f"Attention in coop. layer {i}")
         axe = np.concatenate(axe)
@@ -104,7 +103,7 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
         cax = divider.append_axes('right', size='5%', pad=0.05)
         fig.colorbar(im, cax=cax)
 
-
+    # Print predicted actions and corresponding scores
     unique_actions = torch.unique(pred)
     for verb in unique_actions:
         print(f"\n=> Action: {actions[verb]}")
