@@ -1,5 +1,5 @@
 """
-Human-object interaction detector
+Unary-pairwise transformer for human-object interaction detection
 
 Fred Zhang <frederic.zhang@anu.edu.au>
 

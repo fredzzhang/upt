@@ -19,7 +19,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader, DistributedSampler
 
-from detector import build_detector
+from upt import build_detector
 from utils import custom_collate, CustomisedDLE, DataFactory
 
 warnings.filterwarnings("ignore")

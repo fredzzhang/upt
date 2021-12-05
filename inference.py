@@ -20,7 +20,7 @@ import matplotlib.patheffects as peff
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from utils import DataFactory
-from detector import build_detector
+from upt import build_detector
 
 warnings.filterwarnings("ignore")
 
@@ -133,19 +133,19 @@ def main(args):
     actions = dataset.dataset.verbs if args.dataset == 'hicodet' else \
         dataset.dataset.actions
 
-    detector = build_detector(args, conversion)
-    detector.eval()
+    upt = build_detector(args, conversion)
+    upt.eval()
 
     if os.path.exists(args.resume):
         print(f"=> Continue from saved checkpoint {args.resume}")
         checkpoint = torch.load(args.resume, map_location='cpu')
-        detector.load_state_dict(checkpoint['model_state_dict'])
+        upt.load_state_dict(checkpoint['model_state_dict'])
     else:
         print(f"=> Start from a randomly initialised model")
 
     if args.image_path is None:
         image, _ = dataset[args.index]
-        output = detector([image])
+        output = upt([image])
         image = dataset.dataset.load_image(
             os.path.join(dataset.dataset._root,
                 dataset.dataset.filename(args.index)
@@ -153,7 +153,7 @@ def main(args):
     else:
         image = dataset.dataset.load_image(args.image_path)
         image_tensor, _ = dataset.transforms(image, None)
-        output = detector([image_tensor])
+        output = upt([image_tensor])
 
     visualise_entire_image(image, output[0], actions, args.action, args.action_score_thresh)
 
