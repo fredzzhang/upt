@@ -29,6 +29,8 @@ We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potenti
 |UPT-R101-DC5|V-COCO|`61.3`|`67.1`|`0.131s`|[weights](https://drive.google.com/file/d/17ivP1npCR6jkxOQ3mfN83hrQfeVkiDC9/view?usp=sharing)|[weights](https://drive.google.com/file/d/1uenwkJ_0dSb_nb4HAlMUZ-bMjxD55XTR/view?usp=sharing)|
 
  The inference speed was benchmarked on a GeForce RTX 3090. Note that weights of the UPT model include those of the detector (DETR). You do not need to download the DETR weights, unless you want to train the UPT model from scratch. Training UPT-R50 with 8 GeForce GTX TITAN X GPUs takes around `5` hours on HICO-DET and `40` minutes on V-COCO, almost a tenth of the time compared to other one-stage models such as [QPIC](https://github.com/hitachi-rd-cv/qpic).
+## Contact
+For general inquiries regarding the paper and code, please post them in [Discussions](https://github.com/fredzzhang/upt/discussions). For bug reports and feature requests, please post them in [Issues](https://github.com/fredzzhang/upt/issues). You can also contact me at frederic.zhang@anu.edu.au.
 ## Prerequisites
 1. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket). The recommended PyTorch version is 1.9.0.
 2. Download the repository and the submodules.
@@ -59,7 +61,8 @@ git submodule update
     cd /path/to/upt/vcoco
     ln -s /path/to/coco ./mscoco2014
     ```
-
+## License
+UPT is released under the [BSD-3-Clause License](./LICENSE).
 ## Inference
 We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps from the cooperative and competitive layers. Use the flag `--index` to select images, and `--box-score-thresh` to modify the filtering threshold on object boxes.
 ```bash
