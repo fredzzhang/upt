@@ -61,7 +61,7 @@ git submodule update
     ```
 
 ## Inference
-We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps from the cooperative and competitive layers.
+We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps from the cooperative and competitive layers. Use the flag `--index` to select images, and `--box-score-thresh` to modify the filtering threshold on object boxes.
 ```bash
 python inference.py --resume checkpoints/upt-r50-hicodet.pt --index 8789
 ```
