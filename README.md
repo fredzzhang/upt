@@ -75,7 +75,7 @@ To select the V-COCO dataset and V-COCO models, use the flag `--dataset vcoco`, 
 
 Additionally, to cater for different needs, we implemented an option to run inference on custom images, using the flag `--image-path`. The following is an example.
 ```python
-python inference.py --resume checkpoints/upt-r50-hicodet.pt --image-path ~/Desktop/umbrella.jpeg --action 36
+python inference.py --resume checkpoints/upt-r50-hicodet.pt --image-path ./assets/umbrella.jpeg --action 36
 ```
 <img src="./assets/umbrella_inf.png" height="250" align="center">
 
