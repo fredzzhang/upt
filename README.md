@@ -2,9 +2,9 @@
 <img src="assets/teaser.gif" align="justify" width="500">
 
 This repository contains the official PyTorch implementation for the paper
-> Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._
+> Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._ arXiv preprint arXiv:2112.01838.
 
-\[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__preprint__]()\]
+\[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__preprint__](https://arxiv.org/pdf/2112.01838.pdf)\]
 
 ## Abstract
 > ...<br/>However, the success of such one-stage HOI detectors can largely be attributed to the representation power of transformers. We discovered that when equipped with the same transformer, their two-stage counterparts can be more performant and memory-efficient, while taking a fraction of the time to train. In this work, we propose the Unary&ndash;Pairwise Transformer, a two-stage detector that exploits unary and pairwise representa-tions for HOIs. We observe that the unary and pairwise parts of our transformer network specialise, with the former preferentially increasing the scores of positive examples and the latter decreasing the scores of negative examples. We evaluate our method on the HICO-DET and V-COCO datasets, and significantly outperform state-of-the-art approaches. At inference time, our model with ResNet50 approaches real-time performance on a single GPU.
@@ -29,6 +29,8 @@ We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potenti
 |UPT-R101-DC5|V-COCO|`61.3`|`67.1`|`0.131s`|[weights](https://drive.google.com/file/d/17ivP1npCR6jkxOQ3mfN83hrQfeVkiDC9/view?usp=sharing)|[weights](https://drive.google.com/file/d/1uenwkJ_0dSb_nb4HAlMUZ-bMjxD55XTR/view?usp=sharing)|
 
  The inference speed was benchmarked on a GeForce RTX 3090. Note that weights of the UPT model include those of the detector (DETR). You do not need to download the DETR weights, unless you want to train the UPT model from scratch. Training UPT-R50 with 8 GeForce GTX TITAN X GPUs takes around `5` hours on HICO-DET and `40` minutes on V-COCO, almost a tenth of the time compared to other one-stage models such as [QPIC](https://github.com/hitachi-rd-cv/qpic).
+## Contact
+For general inquiries regarding the paper and code, please post them in [Discussions](https://github.com/fredzzhang/upt/discussions). For bug reports and feature requests, please post them in [Issues](https://github.com/fredzzhang/upt/issues). You can also contact me at frederic.zhang@anu.edu.au.
 ## Prerequisites
 1. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket). The recommended PyTorch version is 1.9.0.
 2. Download the repository and the submodules.
@@ -59,7 +61,8 @@ git submodule update
     cd /path/to/upt/vcoco
     ln -s /path/to/coco ./mscoco2014
     ```
-
+## License
+UPT is released under the [BSD-3-Clause License](./LICENSE).
 ## Inference
 We have implemented inference utilities with different visualisation options. Provided you have downloaded the model weights to `checkpoints/`, run the following command to visualise detected instances together with the attention maps from the cooperative and competitive layers. Use the flag `--index` to select images, and `--box-score-thresh` to modify the filtering threshold on object boxes.
 ```bash
@@ -93,7 +96,7 @@ If you find our work useful for your research, please consider citing us:
 @article{zhang2021upt,
   author    = {Frederic Z. Zhang and Dylan Campbell and Stephen Gould},
   title     = {Efficient Two-Stage Detection of Human-Object Interactions with a Novel Unary-Pairwise Transformer},
-  journal   = {arXiv preprint},
+  journal   = {arXiv preprint arXiv:2112.01838},
   year      = {2021}
 }
 
