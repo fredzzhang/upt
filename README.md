@@ -1,6 +1,8 @@
 # UPT: Unary&ndash;Pairwise Transformers
 <img src="assets/teaser.gif" align="justify" width="500">
 
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-two-stage-detection-of-human-object/human-object-interaction-detection-on-hico)](https://paperswithcode.com/sota/human-object-interaction-detection-on-hico?p=efficient-two-stage-detection-of-human-object) [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-two-stage-detection-of-human-object/human-object-interaction-detection-on-v-coco)](https://paperswithcode.com/sota/human-object-interaction-detection-on-v-coco?p=efficient-two-stage-detection-of-human-object)
+
 This repository contains the official PyTorch implementation for the paper
 > Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._ arXiv preprint arXiv:2112.01838.
 
