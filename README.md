@@ -3,6 +3,8 @@
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-two-stage-detection-of-human-object/human-object-interaction-detection-on-hico)](https://paperswithcode.com/sota/human-object-interaction-detection-on-hico?p=efficient-two-stage-detection-of-human-object) [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/efficient-two-stage-detection-of-human-object/human-object-interaction-detection-on-v-coco)](https://paperswithcode.com/sota/human-object-interaction-detection-on-v-coco?p=efficient-two-stage-detection-of-human-object)
 
+[![python](./assets/python.svg)](https://www.python.org/) [![pytorch](./assets/pytorch.svg)](https://pytorch.org/get-started/locally/) [![pocket](./assets/pocket.svg)](https://github.com/fredzzhang/pocket) [![license](./assets/license.svg)](./LICENSE)
+
 This repository contains the official PyTorch implementation for the paper
 > Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._ arXiv preprint arXiv:2112.01838.
 
