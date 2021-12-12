@@ -40,6 +40,7 @@ For general inquiries regarding the paper and code, please post them in [Discuss
 2. Download the repository and the submodules.
 ```bash
 git clone https://github.com/fredzzhang/upt.git
+cd upt
 git submodule init
 git submodule update
 ```
