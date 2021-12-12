@@ -37,6 +37,7 @@ We provide weights for UPT models pre-trained on HICO-DET and V-COCO for potenti
 For general inquiries regarding the paper and code, please post them in [Discussions](https://github.com/fredzzhang/upt/discussions). For bug reports and feature requests, please post them in [Issues](https://github.com/fredzzhang/upt/issues). You can also contact me at frederic.zhang@anu.edu.au.
 ## Prerequisites
 1. Install the lightweight deep learning library [Pocket](https://github.com/fredzzhang/pocket). The recommended PyTorch version is 1.9.0.
+Make sure the environment for Pocket is activated (`conda activate pocket`), and install packaging with `pip install packaging`. 
 2. Download the repository and the submodules.
 ```bash
 git clone https://github.com/fredzzhang/upt.git
