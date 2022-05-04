@@ -24,6 +24,19 @@ from upt import build_detector
 
 warnings.filterwarnings("ignore")
 
+OBJECTS = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+    "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+    "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+    "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+    "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich",
+    "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard",
+    "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock",
+    "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+]
+
 def draw_boxes(ax, boxes):
     xy = boxes[:, :2].unbind(0)
     h, w = (boxes[:, 2:] - boxes[:, :2]).unbind(1)
@@ -47,6 +60,7 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
     nh = len(output['pairing'][0].unique()); no = len(boxes)
 
     scores = output['scores']
+    objects = output['objects']
     pred = output['labels']
     # Visualise detected human-object pairs with attached scores
     if action is not None:
@@ -112,7 +126,7 @@ def visualise_entire_image(image, output, actions, action=None, thresh=0.2):
             idxh, idxo = pairing[:, idx] + 1
             print(
                 f"({idxh.item():<2}, {idxo.item():<2}),",
-                f"score: {scores[idx]:.4f}"
+                f"score: {scores[idx]:.4f}, object: {OBJECTS[objects[idx]]}."
             )
 
     # Draw the bounding boxes
