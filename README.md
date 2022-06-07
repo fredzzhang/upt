@@ -8,7 +8,7 @@
 This repository contains the official PyTorch implementation for the paper
 > Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._ arXiv preprint arXiv:2112.01838.
 
-\[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__preprint__](https://arxiv.org/pdf/2112.01838.pdf)\]
+\[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__paper__](https://openaccess.thecvf.com/content/CVPR2022/html/Zhang_Efficient_Two-Stage_Detection_of_Human-Object_Interactions_With_a_Novel_Unary-Pairwise_CVPR_2022_paper.html)\] \[[__video__](https://www.youtube.com/watch?v=VneKesTm_gw)\] \[[__preprint__](https://arxiv.org/pdf/2112.01838.pdf)\]
 
 ## Abstract
 > ...<br/>However, the success of such one-stage HOI detectors can largely be attributed to the representation power of transformers. We discovered that when equipped with the same transformer, their two-stage counterparts can be more performant and memory-efficient, while taking a fraction of the time to train. In this work, we propose the Unary&ndash;Pairwise Transformer, a two-stage detector that exploits unary and pairwise representa-tions for HOIs. We observe that the unary and pairwise parts of our transformer network specialise, with the former preferentially increasing the scores of positive examples and the latter decreasing the scores of negative examples. We evaluate our method on the HICO-DET and V-COCO datasets, and significantly outperform state-of-the-art approaches. At inference time, our model with ResNet50 approaches real-time performance on a single GPU.
