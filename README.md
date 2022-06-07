@@ -6,7 +6,7 @@
 [![python](./assets/python.svg)](https://www.python.org/) [![pytorch](./assets/pytorch.svg)](https://pytorch.org/get-started/locally/) [![pocket](./assets/pocket.svg)](https://github.com/fredzzhang/pocket) [![license](./assets/license.svg)](./LICENSE)
 
 This repository contains the official PyTorch implementation for the paper
-> Frederic Z. Zhang, Dylan Campbell and Stephen Gould. _Efficient Two-Stage Detection of Human&ndash;Object Interactions with a Novel Unary&ndash;Pairwise Transformer._ arXiv preprint arXiv:2112.01838.
+> __*Frederic Z. Zhang, Dylan Campbell, Stephen Gould*__; Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2022, pp. 20104-20112.
 
 \[[__project page__](https://fredzzhang.com/unary-pairwise-transformers)\] \[[__paper__](https://openaccess.thecvf.com/content/CVPR2022/html/Zhang_Efficient_Two-Stage_Detection_of_Human-Object_Interactions_With_a_Novel_Unary-Pairwise_CVPR_2022_paper.html)\] \[[__video__](https://www.youtube.com/watch?v=VneKesTm_gw)\] \[[__preprint__](https://arxiv.org/pdf/2112.01838.pdf)\]
 
