@@ -99,11 +99,13 @@ To test the UPT model on HICO-DET, you can either use the Python utilities we im
 If you find our work useful for your research, please consider citing us:
 
 ```bibtex
-@article{zhang2021upt,
+@inproceedings{zhang2022upt,
   author    = {Frederic Z. Zhang and Dylan Campbell and Stephen Gould},
   title     = {Efficient Two-Stage Detection of Human-Object Interactions with a Novel Unary-Pairwise Transformer},
-  journal   = {arXiv preprint arXiv:2112.01838},
-  year      = {2021}
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  month     = {June},
+  year      = {2022},
+  pages     = {20104-20112}
 }
 
 @inproceedings{zhang2021scg,
